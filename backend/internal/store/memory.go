@@ -11,8 +11,9 @@ import (
 )
 
 var (
-	ErrNotFound   = errors.New("not found")
-	ErrEmptyTitle = errors.New("empty course title")
+	ErrNotFound           = errors.New("not found")
+	ErrEmptyTitle         = errors.New("empty course title")
+	ErrGitBindingNotFound = errors.New("git issue not mapped")
 )
 
 type Memory struct {
@@ -26,6 +27,7 @@ type Memory struct {
 	lessonCourse    map[string]string
 	tasksByCourse   map[string][]string
 	successKey      map[string]struct{}
+	gitBindings     map[string]GitIssueBinding
 }
 
 func buildMemory(raw *seedFile) (*Memory, error) {
@@ -39,6 +41,7 @@ func buildMemory(raw *seedFile) (*Memory, error) {
 		lessonCourse:    make(map[string]string),
 		tasksByCourse:   make(map[string][]string),
 		successKey:      make(map[string]struct{}),
+		gitBindings:     make(map[string]GitIssueBinding),
 	}
 	for _, su := range raw.Users {
 		emailKey := strings.ToLower(strings.TrimSpace(su.Email))
@@ -90,7 +93,65 @@ func buildMemory(raw *seedFile) (*Memory, error) {
 			m.tasksByCourse[courseID] = append(m.tasksByCourse[courseID], t.ID)
 		}
 	}
+	for k, v := range raw.GitIssueBindings {
+		key := strings.ToUpper(strings.TrimSpace(k))
+		if key == "" || v.UserID == "" || v.TaskID == "" {
+			continue
+		}
+		m.gitBindings[key] = GitIssueBinding{UserID: v.UserID, TaskID: v.TaskID}
+	}
 	return m, nil
+}
+
+func (m *Memory) ApplyGitIssueSuccess(ctx context.Context, issueKey string) (userID, taskID string, alreadySolved bool, comps []UserCompetency, courseProgress int, err error) {
+	key := strings.ToUpper(strings.TrimSpace(issueKey))
+	m.mu.RLock()
+	b, ok := m.gitBindings[key]
+	if !ok {
+		m.mu.RUnlock()
+		return "", "", false, nil, 0, ErrGitBindingNotFound
+	}
+	if _, uok := m.byID[b.UserID]; !uok {
+		m.mu.RUnlock()
+		return "", "", false, nil, 0, ErrNotFound
+	}
+	if _, tok := m.tasksByID[b.TaskID]; !tok {
+		m.mu.RUnlock()
+		return "", "", false, nil, 0, ErrNotFound
+	}
+	m.mu.RUnlock()
+	alreadySolved, comps, courseProgress, err = m.RecordSuccessIfFirst(ctx, b.UserID, b.TaskID, "git-webhook")
+	return b.UserID, b.TaskID, alreadySolved, comps, courseProgress, err
+}
+
+func (m *Memory) ListStudentStatsByCourse(_ context.Context, courseID string) ([]StudentCourseStat, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if _, ok := m.coursesByID[courseID]; !ok {
+		return nil, ErrNotFound
+	}
+	var out []StudentCourseStat
+	for _, u := range m.byID {
+		if u.Role != "student" {
+			continue
+		}
+		pct := m.courseProgressPercentLocked(u.ID, courseID)
+		comps := copyCompetencies(m.comps[u.ID])
+		out = append(out, StudentCourseStat{
+			UserID:          u.ID,
+			Email:           u.Email,
+			FullName:        u.FullName,
+			ProgressPercent: pct,
+			Competencies:    comps,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ProgressPercent != out[j].ProgressPercent {
+			return out[i].ProgressPercent > out[j].ProgressPercent
+		}
+		return out[i].Email < out[j].Email
+	})
+	return out, nil
 }
 
 func successMapKey(userID, taskID string) string {

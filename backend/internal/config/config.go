@@ -16,6 +16,8 @@ type Config struct {
 	Judge0AuthToken   string
 	Judge0RapidAPIKey string
 	Judge0RapidAPIHost string
+	WebhookGitSecret   string
+	StatsCourseID      string
 }
 
 func Load() Config {
@@ -43,6 +45,10 @@ func Load() Config {
 	if j0token == "" {
 		j0token = os.Getenv("JUDGE0_TOKEN")
 	}
+	statsCourse := os.Getenv("STATS_COURSE_ID")
+	if statsCourse == "" {
+		statsCourse = "b0000000-0000-4000-8000-000000000001"
+	}
 	return Config{
 		Port:               port,
 		JWTSecret:          []byte(secret),
@@ -54,5 +60,7 @@ func Load() Config {
 		Judge0AuthToken:    j0token,
 		Judge0RapidAPIKey:  os.Getenv("JUDGE0_RAPIDAPI_KEY"),
 		Judge0RapidAPIHost: os.Getenv("JUDGE0_RAPIDAPI_HOST"),
+		WebhookGitSecret:   os.Getenv("WEBHOOK_GIT_SECRET"),
+		StatsCourseID:      statsCourse,
 	}
 }

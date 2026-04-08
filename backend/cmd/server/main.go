@@ -39,6 +39,11 @@ func main() {
 		log.Println("Judge0: set JUDGE0_AUTH_TOKEN or JUDGE0_RAPIDAPI_KEY if submissions fail (CE often requires auth)")
 	}
 	taskH := &handlers.TaskCheck{Store: mem, Runner: j0}
+	gitWh := &handlers.GitWebhook{Store: mem, Secret: cfg.WebhookGitSecret}
+	adminH := &handlers.Admin{Store: mem, DefaultCourseID: cfg.StatsCourseID}
+	if cfg.WebhookGitSecret == "" {
+		log.Println("WEBHOOK_GIT_SECRET is empty — Git webhook accepts unsigned requests (set for production)")
+	}
 
 	r := gin.Default()
 	r.Use(cors.New(cors.Config{
@@ -54,6 +59,8 @@ func main() {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
+	r.POST("/webhooks/git", gitWh.HandleGitLab)
+
 	api := r.Group("/api")
 	api.POST("/auth/login", authH.Login)
 	api.GET("/courses", courseH.ListPublished)
@@ -67,6 +74,7 @@ func main() {
 	mod := protected.Group("")
 	mod.Use(auth.RequireRole("moderator"))
 	mod.POST("/courses/create", courseH.Create)
+	mod.GET("/admin/users/stats", adminH.UserStats)
 
 	addr := ":" + cfg.Port
 	log.Printf("listening on %s (CORS origin: %s)", addr, cfg.FrontendOrigin)

@@ -6,11 +6,17 @@ import (
 )
 
 type seedFile struct {
-	Users            []seedUser                  `json:"users"`
-	UserCompetencies map[string][]UserCompetency `json:"user_competencies"`
-	Courses          []Course                    `json:"courses"`
-	Lessons          []Lesson                    `json:"lessons"`
-	Tasks            []Task                      `json:"tasks"`
+	Users              []seedUser                  `json:"users"`
+	UserCompetencies   map[string][]UserCompetency `json:"user_competencies"`
+	Courses            []Course                    `json:"courses"`
+	Lessons            []Lesson                    `json:"lessons"`
+	Tasks              []Task                      `json:"tasks"`
+	GitIssueBindings   map[string]gitIssueBinding  `json:"git_issue_bindings"`
+}
+
+type gitIssueBinding struct {
+	UserID string `json:"user_id"`
+	TaskID string `json:"task_id"`
 }
 
 type seedUser struct {

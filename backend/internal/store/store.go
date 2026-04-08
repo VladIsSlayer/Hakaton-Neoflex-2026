@@ -59,3 +59,24 @@ type TaskCheckStore interface {
 
 const competencyPointsPerTask = 10
 const competencyLevelMax = 100
+
+type GitIssueBinding struct {
+	UserID string `json:"user_id"`
+	TaskID string `json:"task_id"`
+}
+
+type StudentCourseStat struct {
+	UserID           string           `json:"user_id"`
+	Email            string           `json:"email"`
+	FullName         string           `json:"full_name"`
+	ProgressPercent  int              `json:"progress_percent"`
+	Competencies     []UserCompetency `json:"competencies"`
+}
+
+type GitWebhookStore interface {
+	ApplyGitIssueSuccess(ctx context.Context, issueKey string) (userID, taskID string, alreadySolved bool, competencies []UserCompetency, courseProgressPercent int, err error)
+}
+
+type AdminStatsStore interface {
+	ListStudentStatsByCourse(ctx context.Context, courseID string) ([]StudentCourseStat, error)
+}
