@@ -6,12 +6,16 @@ import (
 )
 
 type Config struct {
-	Port           string
-	JWTSecret      []byte
-	TokenTTL       time.Duration
-	FrontendOrigin string
-	DatabaseURL    string
-	SeedJSONPath   string
+	Port              string
+	JWTSecret         []byte
+	TokenTTL          time.Duration
+	FrontendOrigin    string
+	DatabaseURL       string
+	SeedJSONPath      string
+	Judge0BaseURL     string
+	Judge0AuthToken   string
+	Judge0RapidAPIKey string
+	Judge0RapidAPIHost string
 }
 
 func Load() Config {
@@ -31,12 +35,24 @@ func Load() Config {
 	if seedPath == "" {
 		seedPath = "data/seed.json"
 	}
+	j0base := os.Getenv("JUDGE0_BASE_URL")
+	if j0base == "" {
+		j0base = "https://ce.judge0.com"
+	}
+	j0token := os.Getenv("JUDGE0_AUTH_TOKEN")
+	if j0token == "" {
+		j0token = os.Getenv("JUDGE0_TOKEN")
+	}
 	return Config{
-		Port:           port,
-		JWTSecret:      []byte(secret),
-		TokenTTL:       24 * time.Hour,
-		FrontendOrigin: origin,
-		DatabaseURL:    os.Getenv("DATABASE_URL"),
-		SeedJSONPath:   seedPath,
+		Port:               port,
+		JWTSecret:          []byte(secret),
+		TokenTTL:           24 * time.Hour,
+		FrontendOrigin:     origin,
+		DatabaseURL:        os.Getenv("DATABASE_URL"),
+		SeedJSONPath:       seedPath,
+		Judge0BaseURL:      j0base,
+		Judge0AuthToken:    j0token,
+		Judge0RapidAPIKey:  os.Getenv("JUDGE0_RAPIDAPI_KEY"),
+		Judge0RapidAPIHost: os.Getenv("JUDGE0_RAPIDAPI_HOST"),
 	}
 }

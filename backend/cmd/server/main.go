@@ -7,6 +7,7 @@ import (
 	"neoflex-lms/internal/auth"
 	"neoflex-lms/internal/config"
 	"neoflex-lms/internal/handlers"
+	"neoflex-lms/internal/judge0"
 	"neoflex-lms/internal/store"
 
 	"github.com/gin-contrib/cors"
@@ -28,6 +29,16 @@ func main() {
 	authH := &handlers.Auth{Store: mem, JWTSecret: cfg.JWTSecret, TokenTTL: cfg.TokenTTL}
 	userH := &handlers.User{Store: mem}
 	courseH := &handlers.Course{Store: mem}
+	j0 := &judge0.Client{
+		BaseURL:       cfg.Judge0BaseURL,
+		AuthToken:     cfg.Judge0AuthToken,
+		RapidAPIKey:   cfg.Judge0RapidAPIKey,
+		RapidAPIHost:  cfg.Judge0RapidAPIHost,
+	}
+	if cfg.Judge0AuthToken == "" && cfg.Judge0RapidAPIKey == "" {
+		log.Println("Judge0: set JUDGE0_AUTH_TOKEN or JUDGE0_RAPIDAPI_KEY if submissions fail (CE often requires auth)")
+	}
+	taskH := &handlers.TaskCheck{Store: mem, Runner: j0}
 
 	r := gin.Default()
 	r.Use(cors.New(cors.Config{
@@ -51,6 +62,7 @@ func main() {
 	protected := api.Group("")
 	protected.Use(auth.Middleware(cfg.JWTSecret))
 	protected.GET("/users/me/profile", userH.MeProfile)
+	protected.POST("/tasks/:task_id/check", taskH.Check)
 
 	mod := protected.Group("")
 	mod.Use(auth.RequireRole("moderator"))

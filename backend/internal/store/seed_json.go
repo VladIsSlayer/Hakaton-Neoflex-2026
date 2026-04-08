@@ -10,6 +10,7 @@ type seedFile struct {
 	UserCompetencies map[string][]UserCompetency `json:"user_competencies"`
 	Courses          []Course                    `json:"courses"`
 	Lessons          []Lesson                    `json:"lessons"`
+	Tasks            []Task                      `json:"tasks"`
 }
 
 type seedUser struct {

@@ -22,6 +22,10 @@ type Memory struct {
 	comps           map[string][]UserCompetency
 	coursesByID     map[string]*Course
 	lessonsByCourse map[string][]Lesson
+	tasksByID       map[string]*Task
+	lessonCourse    map[string]string
+	tasksByCourse   map[string][]string
+	successKey      map[string]struct{}
 }
 
 func buildMemory(raw *seedFile) (*Memory, error) {
@@ -31,6 +35,10 @@ func buildMemory(raw *seedFile) (*Memory, error) {
 		comps:           make(map[string][]UserCompetency),
 		coursesByID:     make(map[string]*Course),
 		lessonsByCourse: make(map[string][]Lesson),
+		tasksByID:       make(map[string]*Task),
+		lessonCourse:    make(map[string]string),
+		tasksByCourse:   make(map[string][]string),
+		successKey:      make(map[string]struct{}),
 	}
 	for _, su := range raw.Users {
 		emailKey := strings.ToLower(strings.TrimSpace(su.Email))
@@ -64,6 +72,7 @@ func buildMemory(raw *seedFile) (*Memory, error) {
 	tmp := make(map[string][]Lesson)
 	for i := range raw.Lessons {
 		les := raw.Lessons[i]
+		m.lessonCourse[les.ID] = les.CourseID
 		tmp[les.CourseID] = append(tmp[les.CourseID], les)
 	}
 	for cid, list := range tmp {
@@ -72,7 +81,97 @@ func buildMemory(raw *seedFile) (*Memory, error) {
 		copy(cp, list)
 		m.lessonsByCourse[cid] = cp
 	}
+	for i := range raw.Tasks {
+		t := raw.Tasks[i]
+		tCopy := t
+		m.tasksByID[t.ID] = &tCopy
+		courseID := m.lessonCourse[t.LessonID]
+		if courseID != "" {
+			m.tasksByCourse[courseID] = append(m.tasksByCourse[courseID], t.ID)
+		}
+	}
 	return m, nil
+}
+
+func successMapKey(userID, taskID string) string {
+	return userID + "\x00" + taskID
+}
+
+func (m *Memory) GetTask(_ context.Context, taskID string) (*Task, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	t, ok := m.tasksByID[taskID]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	c := *t
+	return &c, nil
+}
+
+func (m *Memory) courseProgressPercentLocked(userID, courseID string) int {
+	ids := m.tasksByCourse[courseID]
+	if len(ids) == 0 {
+		return 0
+	}
+	solved := 0
+	for _, tid := range ids {
+		if _, ok := m.successKey[successMapKey(userID, tid)]; ok {
+			solved++
+		}
+	}
+	return solved * 100 / len(ids)
+}
+
+func copyCompetencies(list []UserCompetency) []UserCompetency {
+	out := make([]UserCompetency, len(list))
+	copy(out, list)
+	return out
+}
+
+func (m *Memory) RecordSuccessIfFirst(_ context.Context, userID, taskID, userCode string) (bool, []UserCompetency, int, error) {
+	_ = userCode
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	t, ok := m.tasksByID[taskID]
+	if !ok {
+		return false, nil, 0, ErrNotFound
+	}
+	courseID := m.lessonCourse[t.LessonID]
+	key := successMapKey(userID, taskID)
+	if _, done := m.successKey[key]; done {
+		comps := m.comps[userID]
+		pct := m.courseProgressPercentLocked(userID, courseID)
+		return true, copyCompetencies(comps), pct, nil
+	}
+	m.successKey[key] = struct{}{}
+
+	list := m.comps[userID]
+	found := false
+	for i := range list {
+		if list[i].CompetencyID == t.CompetencyID {
+			nv := list[i].Level + competencyPointsPerTask
+			if nv > competencyLevelMax {
+				nv = competencyLevelMax
+			}
+			list[i].Level = nv
+			found = true
+			break
+		}
+	}
+	if !found {
+		lv := competencyPointsPerTask
+		if lv > competencyLevelMax {
+			lv = competencyLevelMax
+		}
+		m.comps[userID] = append(list, UserCompetency{
+			CompetencyID:   t.CompetencyID,
+			CompetencyName: t.CompetencyName,
+			Level:          lv,
+		})
+	}
+	pct := m.courseProgressPercentLocked(userID, courseID)
+	comps := m.comps[userID]
+	return false, copyCompetencies(comps), pct, nil
 }
 
 func (m *Memory) FindByEmail(_ context.Context, email string) (*User, error) {

@@ -42,3 +42,20 @@ type CourseStore interface {
 	ListLessonsForPublishedCourse(ctx context.Context, courseID string) ([]Lesson, error)
 	CreateCourse(ctx context.Context, title, description string, isPublished bool) (Course, error)
 }
+
+type Task struct {
+	ID              string `json:"id"`
+	LessonID        string `json:"lesson_id"`
+	LanguageID      int    `json:"language_id"`
+	ReferenceAnswer string `json:"reference_answer"`
+	CompetencyID    string `json:"competency_id"`
+	CompetencyName  string `json:"competency_name"`
+}
+
+type TaskCheckStore interface {
+	GetTask(ctx context.Context, taskID string) (*Task, error)
+	RecordSuccessIfFirst(ctx context.Context, userID, taskID, userCode string) (alreadySolved bool, competencies []UserCompetency, courseProgressPercent int, err error)
+}
+
+const competencyPointsPerTask = 10
+const competencyLevelMax = 100
