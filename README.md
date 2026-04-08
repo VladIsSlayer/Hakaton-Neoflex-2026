@@ -1,5 +1,7 @@
 # Hakaton-Neoflex-2026 | Выборгские псы
 
+https://www.neoflex.ru/
+
 бд | supabased https://supabase.com/dashboard/project/exljdepzqsgefamkkbww
 фронт | react 
 back | go + немного typescript
