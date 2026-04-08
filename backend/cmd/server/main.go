@@ -19,13 +19,15 @@ func main() {
 		log.Println("DATABASE_URL is set; PostgreSQL store is not wired yet — using in-memory store")
 	}
 
-	mem, err := store.NewMemory()
+	mem, err := store.NewMemoryFromJSON(cfg.SeedJSONPath)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("load seed JSON (%s): %v", cfg.SeedJSONPath, err)
 	}
+	log.Printf("loaded data from %s (in-memory; set SEED_JSON_PATH if file not found)", cfg.SeedJSONPath)
 
 	authH := &handlers.Auth{Store: mem, JWTSecret: cfg.JWTSecret, TokenTTL: cfg.TokenTTL}
 	userH := &handlers.User{Store: mem}
+	courseH := &handlers.Course{Store: mem}
 
 	r := gin.Default()
 	r.Use(cors.New(cors.Config{
@@ -43,10 +45,16 @@ func main() {
 
 	api := r.Group("/api")
 	api.POST("/auth/login", authH.Login)
+	api.GET("/courses", courseH.ListPublished)
+	api.GET("/courses/:id/lessons", courseH.LessonsForCourse)
 
 	protected := api.Group("")
 	protected.Use(auth.Middleware(cfg.JWTSecret))
 	protected.GET("/users/me/profile", userH.MeProfile)
+
+	mod := protected.Group("")
+	mod.Use(auth.RequireRole("moderator"))
+	mod.POST("/courses/create", courseH.Create)
 
 	addr := ":" + cfg.Port
 	log.Printf("listening on %s (CORS origin: %s)", addr, cfg.FrontendOrigin)

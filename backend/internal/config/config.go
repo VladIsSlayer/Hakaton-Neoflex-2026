@@ -11,6 +11,7 @@ type Config struct {
 	TokenTTL       time.Duration
 	FrontendOrigin string
 	DatabaseURL    string
+	SeedJSONPath   string
 }
 
 func Load() Config {
@@ -26,11 +27,16 @@ func Load() Config {
 	if origin == "" {
 		origin = "http://localhost:5173"
 	}
+	seedPath := os.Getenv("SEED_JSON_PATH")
+	if seedPath == "" {
+		seedPath = "data/seed.json"
+	}
 	return Config{
 		Port:           port,
 		JWTSecret:      []byte(secret),
 		TokenTTL:       24 * time.Hour,
 		FrontendOrigin: origin,
 		DatabaseURL:    os.Getenv("DATABASE_URL"),
+		SeedJSONPath:   seedPath,
 	}
 }
