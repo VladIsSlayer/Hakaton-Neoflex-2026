@@ -55,9 +55,9 @@
 Специфичные сложные ИТ-задачи в рамках конкретного урока (например, `content_type` = `interactive_task`).
 - `id` (uuid) — PK.
 - `lesson_id` (uuid) — FK к `LESSONS.id`.
-- `type` (string) — Определяет тип: `sql` (проверить query), `code` (сценарий питона), `git_pr` (ожидаем хук из SVN), `sandbox` (выдать контейнер стенда).
-- `reference_answer` (string) — Референс/Ответ/Регулярка, которая проверяется Code/SQL Checker'ом.
-- `docker_image` (string) — Опциональное имя docker-образа для sandboxes ("postgres:15-alpine").
+- `type` (string) — Определяет языковой тип: `sql`, `python`, `git_pr` (ожидаем хук из SVN).
+- `reference_answer` (string) — Эталонный ответ (stdout выхлоп), с которым сравнивается код через систему Judge0.
+- `language_id` (int) — Опциональный ID языка программирования для API Judge0 (например, 71 для Python).
 - `competency_id` (uuid) — Связанный скилл (успех задачи прокачивает компетенцию на N-баллов).
 
 ### 8. `SUBMISSIONS`
@@ -70,10 +70,4 @@
 - `console_output` (string) — Журриал (log) выполнения.
 - `created_at` (timestamp).
 
-### 9. `SANDBOXES`
-Активные "живые" контейнеры пользователя.
-- `id` (uuid) — PK.
-- `user_id` (uuid) — FK.
-- `task_id` (uuid) — FK.
-- `container_url` (string) — Сетевой URL или SSH-адрес активного стенда, который студент использует для работы.
-- `expires_at` (timestamp) — Время TTL, по достижении которого Backend автоматически удаляет этот docker container.
+
