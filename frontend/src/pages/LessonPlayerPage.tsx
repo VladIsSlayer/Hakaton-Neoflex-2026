@@ -11,6 +11,7 @@ import {
   type LessonContentBlock,
 } from '@/api/catalog'
 import { getAccessToken } from '@/api/client'
+import { FREE_COURSE_ID } from '@/constants/freeCourse'
 
 export function LessonPlayerPage() {
   const { courseId, lessonId } = useParams()
@@ -29,17 +30,45 @@ export function LessonPlayerPage() {
     queryFn: () => fetchLessonsByCourse(courseId ?? ''),
     enabled: Boolean(courseId),
   })
-  const lessonContentQuery = useQuery({
-    queryKey: ['lesson-content', courseId, lessonId],
-    queryFn: () => fetchLessonContentConfig(courseId ?? '', lessonId ?? ''),
-    enabled: Boolean(courseId && lessonId),
+  const freeLessonsQuery = useQuery({
+    queryKey: ['course-lessons', 'free-stub', FREE_COURSE_ID],
+    queryFn: () => fetchLessonsByCourse(FREE_COURSE_ID),
+    enabled: Boolean(FREE_COURSE_ID),
   })
 
   const lesson = useMemo(
     () => (courseLessonsQuery.data ?? []).find((item) => item.id === lessonId) ?? null,
     [courseLessonsQuery.data, lessonId]
   )
+  const orderIndex = lesson?.order_index ?? 0
+
+  /** Теория и практика подгружаются с бесплатного курса (по order_index), заглушка для любого маршрута. */
+  const contentTarget = useMemo(() => {
+    if (!courseId || !lessonId) return null
+    if (!courseLessonsQuery.isFetched || !freeLessonsQuery.isFetched) return null
+    const freeList = freeLessonsQuery.data ?? []
+    if (freeList.length > 0) {
+      const hit = freeList.find((l) => (l.order_index ?? 0) === orderIndex)
+      return { cid: FREE_COURSE_ID, lid: (hit ?? freeList[0]).id }
+    }
+    return { cid: courseId, lid: lessonId }
+  }, [
+    courseId,
+    lessonId,
+    orderIndex,
+    courseLessonsQuery.isFetched,
+    freeLessonsQuery.isFetched,
+    freeLessonsQuery.data,
+  ])
+
+  const lessonContentQuery = useQuery({
+    queryKey: ['lesson-content', contentTarget?.cid, contentTarget?.lid, 'stub-free'],
+    queryFn: () => fetchLessonContentConfig(contentTarget!.cid, contentTarget!.lid),
+    enabled: Boolean(contentTarget),
+  })
+
   const lessonContent = lessonContentQuery.data
+  const lessonIdForTaskCheck = contentTarget?.lid ?? lessonId
 
   const handleCheckQuiz = (blockIndex: number) => {
     const answer = quizAnswers[blockIndex]
@@ -55,7 +84,7 @@ export function LessonPlayerPage() {
       message.error('Не выбран урок')
       return
     }
-    const meta = await fetchLessonTaskMeta(lessonId)
+    const meta = await fetchLessonTaskMeta(lessonIdForTaskCheck ?? lessonId)
     if (!meta) {
       message.error('Для этого урока нет задачи в БД (tasks). Добавьте задачу или проверьте курс.')
       return
@@ -207,6 +236,11 @@ export function LessonPlayerPage() {
         <Typography.Text type="secondary">
           Курс: <Link className="neo-link" to={`/courses/${courseId}`}>{courseQuery.data?.title ?? courseId}</Link>
         </Typography.Text>
+        {contentTarget && contentTarget.cid === FREE_COURSE_ID && courseId !== FREE_COURSE_ID ? (
+          <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
+            Теория и задания ниже — с курса «Бесплатный курс» (заглушка по номеру урока).
+          </Typography.Paragraph>
+        ) : null}
       </Card>
 
       <Card className="neo-card" title="Теоретический материал">

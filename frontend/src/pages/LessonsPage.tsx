@@ -1,13 +1,15 @@
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Avatar, Button, Card, Input, List, Pagination, Progress, Space, Tag, Typography } from 'antd'
 import { SearchOutlined } from '@ant-design/icons'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchCourseAudienceStats, fetchCourses, fetchLessonProgressForStudent, fetchLessons } from '@/api/catalog'
+import { FREE_COURSE_ID } from '@/constants/freeCourse'
 import { useAuthStore } from '@/stores/authStore'
 
 /** Агрегатор «продолжить обучение»: последний урок, список в процессе */
 export function LessonsPage() {
+  const navigate = useNavigate()
   const isLoggedIn = useAuthStore((s) => Boolean(s.accessToken))
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -60,7 +62,27 @@ export function LessonsPage() {
   const recentLesson = lessonsSource.find((lesson) => lesson.progress > 0) ?? lessonsSource[0]
   const recentCourseTitle = recentLesson?.course ?? 'Курс'
   const recentBadge = (recentCourseTitle.match(/[A-Za-zА-Яа-я]/)?.[0] ?? 'L').toUpperCase()
-  const lessonBodyMap = new Map((lessonsQuery.data ?? []).map((lesson) => [lesson.id, lesson.content_body]))
+
+  /** Большой промо-баннер: всегда курс «Бесплатный курс» (FREE_COURSE_ID). */
+  const spotlightCourse = useMemo(
+    () => coursesQuery.data?.find((c) => c.id === FREE_COURSE_ID) ?? null,
+    [coursesQuery.data]
+  )
+  const spotlightLessons = useMemo(() => {
+    return [...(lessonsQuery.data ?? [])]
+      .filter((l) => l.course_id === FREE_COURSE_ID)
+      .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
+  }, [lessonsQuery.data])
+  const spotlightFirstLesson = spotlightLessons[0] ?? null
+  const spotlightPromoUrl = `/courses/${FREE_COURSE_ID}`
+  const spotlightTitle = spotlightCourse?.title ?? 'Бесплатный курс'
+  const spotlightSubtitle = (() => {
+    const desc = spotlightCourse?.description?.trim()
+    if (desc) return desc
+    const body = spotlightFirstLesson?.content_body?.trim()
+    if (body) return body.length > 220 ? `${body.slice(0, 217)}…` : body
+    return 'Материалы курса и практические задания — начните с первого урока.'
+  })()
 
   const filteredLessons = useMemo(
     () =>
@@ -102,16 +124,36 @@ export function LessonsPage() {
         </Card>
       )}
 
-      <Card className="neo-banner neo-banner--promo">
+      <Card
+        className="neo-banner neo-banner--promo"
+        hoverable
+        styles={{ body: { cursor: 'pointer' } }}
+        onClick={() => navigate(spotlightPromoUrl)}
+        role="link"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            navigate(spotlightPromoUrl)
+          }
+        }}
+        aria-label={`Открыть страницу курса: ${spotlightTitle}`}
+      >
         <Typography.Title className="neo-promo-title" level={2} style={{ marginTop: 0, color: '#ececed' }}>
-          {recentCourseTitle}
+          {spotlightTitle}
         </Typography.Title>
         <Typography.Paragraph className="neo-promo-subtitle" style={{ color: '#ececed', marginBottom: 0 }}>
-          {recentLesson ? (lessonBodyMap.get(recentLesson.id) ?? recentLesson.title) :
-            'Материалы курса и практические задания из вашей программы обучения.'}
+          {spotlightSubtitle}
         </Typography.Paragraph>
         <div className="neo-banner-promo__cta">
-          <Button type="primary" className="neo-gradient-button">
+          <Button
+            type="primary"
+            className="neo-gradient-button"
+            onClick={(e) => {
+              e.stopPropagation()
+              navigate(spotlightPromoUrl)
+            }}
+          >
             Попробовать
           </Button>
         </div>

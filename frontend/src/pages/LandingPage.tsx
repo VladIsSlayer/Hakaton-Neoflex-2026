@@ -2,6 +2,9 @@ import { Button, Card, Col, Progress, Row, Space, Typography } from 'antd'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { fetchCourses, fetchLessons, fetchStudentSnapshot } from '@/api/catalog'
+import { bannerSrcForCourse } from '@/constants/courseBanners'
+import { FREE_COURSE_BANNER_SRC, FREE_COURSE_ID } from '@/constants/freeCourse'
+import type { CSSProperties } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 
 const SERVICE_GROUPS = [
@@ -15,7 +18,7 @@ const SERVICE_GROUPS = [
   },
   {
     title: 'Платформы данных',
-    items: ['DWH и Enterprise Data Lake', 'Data Engineering', 'Data Governance'],
+    items: ['DWH и Enterprise Data Lake', 'Data Engineering', 'Качество данных'],
   },
 ] as const
 
@@ -44,17 +47,16 @@ export function LandingPage() {
     refetchOnMount: 'always',
   })
 
-  const recentEnrolled = studentQuery.data?.enrolledCourses?.[0]
-  const fallbackRecentCourse = coursesQuery.data && coursesQuery.data.length > 0
-    ? coursesQuery.data[coursesQuery.data.length - 1]
-    : null
-  const recentCourse = recentEnrolled
-    ? (coursesQuery.data?.find((course) => course.id === recentEnrolled.courseId) ??
-      { id: recentEnrolled.courseId, title: recentEnrolled.courseTitle, description: null })
-    : fallbackRecentCourse
-  const recentCourseLessons = lessonsQuery.data?.filter((lesson) => lesson.course_id === recentCourse?.id) ?? []
-  const completedModules = recentEnrolled?.lessonsCompleted ?? 0
-  const progressPercent = recentEnrolled?.progressPercent ?? 0
+  /** Центральная карточка всегда про бесплатный демо-курс, независимо от аккаунта. */
+  const freeCourse =
+    coursesQuery.data?.find((c) => c.id === FREE_COURSE_ID) ?? coursesQuery.data?.[0] ?? null
+  const enrollmentInFree = studentQuery.data?.enrolledCourses?.find(
+    (e) => e.courseId === freeCourse?.id
+  )
+  const freeCourseLessons =
+    lessonsQuery.data?.filter((lesson) => lesson.course_id === freeCourse?.id) ?? []
+  const completedModules = enrollmentInFree?.lessonsCompleted ?? 0
+  const progressPercent = enrollmentInFree?.progressPercent ?? 0
 
   const sortedCourses = [...(coursesQuery.data ?? [])].sort((a, b) => {
     const aNum = getTrailingNumber(a.title)
@@ -63,9 +65,11 @@ export function LandingPage() {
     return a.title.localeCompare(b.title, 'ru')
   })
 
-  const courseGroups = sortedCourses.length > 0
-    ? [{ title: 'Направления', items: sortedCourses.slice(0, 6).map((course) => course.title) }]
-    : SERVICE_GROUPS
+  const directionCourses = sortedCourses.length > 0 ? sortedCourses.slice(0, 6) : []
+  const courseGroups =
+    sortedCourses.length > 0
+      ? [{ title: 'Направления', items: directionCourses.map((c) => c.title) }]
+      : SERVICE_GROUPS
 
   return (
     <Space className="landing-page" direction="vertical" size={16} style={{ width: '100%' }}>
@@ -82,18 +86,25 @@ export function LandingPage() {
       </Card>
 
       <Card
-        className="neo-card neo-last-course-banner"
+        className="neo-last-course-banner neo-last-course-banner--free-course"
         hoverable
-        onClick={() => recentCourse?.id && navigate(`/courses/${recentCourse.id}`)}
+        style={{
+          backgroundImage: `linear-gradient(135deg, rgba(38, 7, 67, 0.9) 0%, rgba(30, 8, 77, 0.78) 50%, rgba(38, 7, 67, 0.62) 100%), url(${encodeURI(FREE_COURSE_BANNER_SRC)})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+        }}
+        onClick={() => freeCourse?.id && navigate(`/courses/${freeCourse.id}`)}
       >
         <Typography.Title level={3} style={{ marginTop: 0, marginBottom: 6 }}>
-          {recentCourse?.title ?? 'Последний курс'}
+          {freeCourse?.title ?? 'Бесплатный курс'}
         </Typography.Title>
         <Typography.Paragraph type="secondary" style={{ marginTop: 0, marginBottom: 8 }}>
-          {recentCourse?.description ?? 'Описание курса пока не заполнено в БД.'}
+          {freeCourse?.description ?? 'Описание курса пока не заполнено в БД.'}
         </Typography.Paragraph>
         <Typography.Paragraph type="secondary" style={{ marginTop: 0, marginBottom: 8 }}>
-          M&G: {completedModules}/{recentEnrolled?.lessonsTotal ?? recentCourseLessons.length} модулей
+          Модули: {completedModules}/{enrollmentInFree?.lessonsTotal ?? freeCourseLessons.length}
+          {isAuthenticated && !enrollmentInFree ? ' · Запишитесь на курс в каталоге, чтобы сохранять прогресс' : null}
         </Typography.Paragraph>
         <Progress percent={progressPercent} showInfo={false} strokeColor={{ from: '#ff7a00', to: '#ff2f92' }} />
       </Card>
@@ -107,26 +118,48 @@ export function LandingPage() {
             {group.title}
           </Typography.Title>
           <Row gutter={[12, 12]}>
-            {group.items.map((item) => (
-              <Col key={item} xs={24} sm={12}>
-                <Card
-                  className="neo-service-tile"
-                  hoverable
-                  onClick={() => {
-                    const selected = sortedCourses.find((c) => c.title === item)
-                    if (selected?.id) navigate(`/courses/${selected.id}`)
-                  }}
-                >
-                  <Typography.Text className="neo-service-tile__text neo-service-tile__text--base">
-                    {item}
-                  </Typography.Text>
-                  <Typography.Text className="neo-service-tile__desc">
-                    {sortedCourses.find((c) => c.title === item)?.description ??
-                      'Описание курса пока не заполнено в БД.'}
-                  </Typography.Text>
-                </Card>
-              </Col>
-            ))}
+            {group.title === 'Направления' && directionCourses.length > 0
+              ? directionCourses.map((course) => (
+                  <Col key={course.id} xs={24} sm={12}>
+                    <Card
+                      className="neo-service-tile neo-service-tile--banner"
+                      hoverable
+                      style={
+                        {
+                          '--neo-tile-banner': `url(${encodeURI(bannerSrcForCourse(course))})`,
+                        } as CSSProperties
+                      }
+                      onClick={() => navigate(`/courses/${course.id}`)}
+                    >
+                      <Typography.Text className="neo-service-tile__text neo-service-tile__text--base">
+                        {course.title}
+                      </Typography.Text>
+                      <Typography.Text className="neo-service-tile__desc">
+                        {course.description ?? 'Описание курса пока не заполнено в БД.'}
+                      </Typography.Text>
+                    </Card>
+                  </Col>
+                ))
+              : group.items.map((item) => (
+                  <Col key={item} xs={24} sm={12}>
+                    <Card
+                      className="neo-service-tile"
+                      hoverable
+                      onClick={() => {
+                        const selected = sortedCourses.find((c) => c.title === item)
+                        if (selected?.id) navigate(`/courses/${selected.id}`)
+                      }}
+                    >
+                      <Typography.Text className="neo-service-tile__text neo-service-tile__text--base">
+                        {item}
+                      </Typography.Text>
+                      <Typography.Text className="neo-service-tile__desc">
+                        {sortedCourses.find((c) => c.title === item)?.description ??
+                          'Описание курса пока не заполнено в БД.'}
+                      </Typography.Text>
+                    </Card>
+                  </Col>
+                ))}
           </Row>
         </div>
       ))}

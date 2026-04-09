@@ -27,7 +27,7 @@ export function DashboardPage() {
   const isLoggedIn = useAuthStore((s) => Boolean(s.accessToken))
   const user = useAuthStore((s) => s.user)
   const [page, setPage] = useState(1)
-  const [activeFilter, setActiveFilter] = useState('Все отрасли')
+  const [activeFilter, setActiveFilter] = useState('Все языки')
   const [searchOpen, setSearchOpen] = useState(false)
   const [search, setSearch] = useState('')
   const pageSize = 9
@@ -109,7 +109,7 @@ export function DashboardPage() {
       </Typography.Title>
 
       <Space wrap>
-        {['Все отрасли', 'Финансы', 'Промышленность', 'Ритейл'].map((filter) => (
+        {['Все языки', 'Python', 'SQL', 'Go'].map((filter) => (
           <Button
             key={filter}
             shape="round"

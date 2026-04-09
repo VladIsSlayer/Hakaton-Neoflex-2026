@@ -99,6 +99,51 @@ code {
   padding: 12px 24px;
 }
 
+/* Ant Design Header: без подложки */
+.site-layout__header .site-header a.site-header__nav-link:hover {
+  background: transparent !important;
+}
+
+.site-layout__header .site-header a.site-header__nav-link:not(.site-header__nav-link--active):hover {
+  color: #ffffff !important;
+}
+
+/* Активный пункт: сплошной цвет (градиент через background-clip ломался при hover) */
+.site-layout__header .site-header a.site-header__nav-link.site-header__nav-link--active,
+.site-layout__header .site-header a.site-header__nav-link.site-header__nav-link--active:visited {
+  color: #ff7a22 !important;
+  -webkit-text-fill-color: currentColor !important;
+  background-image: none !important;
+  background-clip: border-box !important;
+  -webkit-background-clip: border-box !important;
+}
+
+.site-layout__header .site-header a.site-header__nav-link.site-header__nav-link--active:hover,
+.site-layout__header .site-header a.site-header__nav-link.site-header__nav-link--active:focus-visible {
+  color: #ffa04d !important;
+  -webkit-text-fill-color: currentColor !important;
+  background-image: none !important;
+}
+
+/* :visited иначе даёт тёмный/фиолетовый текст на тёмном фоне */
+.site-layout__header .site-header a.site-header__nav-link:not(.site-header__nav-link--active):visited {
+  color: #ececed !important;
+}
+
+/* Ant Button в шапке подставляет colorText темы при hover — текст почти чёрный */
+.site-layout__header .site-header button.ant-btn:not(.ant-btn-primary):not(.site-header__gradient-btn),
+.site-layout__header .site-header .site-header__logout-btn.ant-btn {
+  color: #ececed !important;
+}
+
+.site-layout__header .site-header button.ant-btn:not(.ant-btn-primary):not(.site-header__gradient-btn):hover,
+.site-layout__header .site-header button.ant-btn:not(.ant-btn-primary):not(.site-header__gradient-btn):focus-visible,
+.site-layout__header .site-header .site-header__logout-btn.ant-btn:hover,
+.site-layout__header .site-header .site-header__logout-btn.ant-btn:focus-visible {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
 .site-layout__content {
   padding: 20px 24px 20px;
 }
@@ -185,27 +230,58 @@ code {
   padding: 4px 6px;
   border-radius: 0;
   border: none;
-  transition: all 0.2s ease;
+  outline: none;
+  box-shadow: none;
+  transition: color 0.2s ease, opacity 0.2s ease;
 }
 
-.site-header__nav-link:hover {
+.site-header__nav-link:not(.site-header__nav-link--active):visited {
+  color: #ececed;
+}
+
+/* Только неактивные: иначе color перебивает -webkit-text-fill и текст становится чёрным */
+.site-header__nav-link:not(.site-header__nav-link--active):hover {
   background: transparent;
-  color: #ececed;
+  color: #ffffff;
 }
 
-.site-header__nav-link:active {
-  color: #ececed;
-  opacity: 0.85;
+.site-header__nav-link:not(.site-header__nav-link--active):active {
+  color: #ffffff;
+  opacity: 0.9;
 }
 
 .site-header__nav-link--active {
   border-color: transparent;
-  background: transparent;
-  -webkit-text-fill-color: transparent;
-  background-image: linear-gradient(90deg, #ff7a00 0%, #ff2f92 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
+  background: transparent !important;
+  color: #ff7a22 !important;
+  -webkit-text-fill-color: currentColor !important;
+  background-image: none !important;
+  background-clip: border-box !important;
+  -webkit-background-clip: border-box !important;
   font-weight: 600;
+}
+
+.site-header__nav-link--active:hover,
+.site-header__nav-link--active:focus-visible {
+  color: #ffa04d !important;
+  -webkit-text-fill-color: currentColor !important;
+  background-image: none !important;
+}
+
+.site-header__nav-link--active:visited {
+  color: #ff7a22 !important;
+}
+
+.site-header__nav-link--active:active {
+  color: #e86810 !important;
+  -webkit-text-fill-color: currentColor !important;
+  opacity: 1;
+}
+
+.site-header__nav-link:focus-visible {
+  outline: 2px solid rgba(255, 180, 77, 0.85);
+  outline-offset: 4px;
+  border-radius: 999px;
 }
 
 .site-header__primary-link {
@@ -359,6 +435,12 @@ code {
 .neo-service-tile:hover {
   filter: brightness(0.9);
   transform: translateY(-2px);
+}
+
+.neo-service-tile.neo-service-tile--banner.ant-card {
+  background:
+    linear-gradient(135deg, rgba(38, 7, 67, 0.88) 0%, rgba(30, 8, 77, 0.78) 45%, rgba(38, 7, 67, 0.62) 100%),
+    var(--neo-tile-banner) center / cover no-repeat !important;
 }
 
 @media (max-width: 900px) {
@@ -603,6 +685,30 @@ code {
 .neo-last-course-banner:hover {
   transform: translateY(-1px);
   transition: transform 0.2s ease;
+}
+
+.neo-last-course-banner--free-course.ant-card {
+  border: 1px solid rgba(38, 7, 67, 0.16);
+  box-shadow: 0 8px 20px rgba(38, 7, 67, 0.08);
+  color: #ececed;
+  overflow: hidden;
+}
+
+.neo-last-course-banner--free-course .ant-typography,
+.neo-last-course-banner--free-course h1,
+.neo-last-course-banner--free-course h2,
+.neo-last-course-banner--free-course h3,
+.neo-last-course-banner--free-course h4,
+.neo-last-course-banner--free-course h5 {
+  color: #ececed !important;
+}
+
+.neo-last-course-banner--free-course .ant-typography-secondary {
+  color: rgba(236, 236, 237, 0.78) !important;
+}
+
+.neo-last-course-banner--free-course .ant-progress-inner {
+  background: rgba(255, 255, 255, 0.22) !important;
 }
 
 .neo-promo-title {

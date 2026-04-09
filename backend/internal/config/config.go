@@ -55,7 +55,7 @@ func Load() Config {
 	}
 	statsCourse := os.Getenv("STATS_COURSE_ID")
 	if statsCourse == "" {
-		statsCourse = "b0000000-0000-4000-8000-000000000001"
+		statsCourse = "7dabf3fa-15d8-4a5d-bcf6-9cc188a7c074"
 	}
 	return Config{
 		Port:               port,
