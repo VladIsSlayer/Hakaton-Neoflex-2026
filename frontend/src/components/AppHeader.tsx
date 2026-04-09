@@ -1,7 +1,10 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
+import { Avatar, Button, Space, Typography } from 'antd'
+import { UserOutlined } from '@ant-design/icons'
 import { useAuthUiStore } from '@/stores/authUiStore'
 
 export function AppHeader() {
+  const navigate = useNavigate()
   const isLoggedIn = useAuthUiStore((s) => s.isLoggedIn)
   const setLoggedIn = useAuthUiStore((s) => s.setLoggedIn)
   const toggleLoggedIn = useAuthUiStore((s) => s.toggleLoggedIn)
@@ -15,14 +18,14 @@ export function AppHeader() {
         <NavLink to="/" className="site-header__logo" end>
           NEO EDU
         </NavLink>
-        <button
-          type="button"
+        <Button
+          size="small"
           className="site-header__demo-toggle"
           onClick={toggleLoggedIn}
-          title="Переключить демо-состояние «вошёл в систему»"
+          type="text"
         >
-          демо: {isLoggedIn ? 'вышел' : 'вошёл'}
-        </button>
+          demo: {isLoggedIn ? 'logged in' : 'logged out'}
+        </Button>
       </div>
 
       <nav className="site-header__center" aria-label="Основное меню">
@@ -39,23 +42,31 @@ export function AppHeader() {
 
       <div className="site-header__right">
         {isLoggedIn ? (
-          <>
+          <Space size={12}>
             <NavLink to="/profile" className={navClass}>
-              Профиль
+              <Space size={8}>
+                <Avatar size={24} icon={<UserOutlined />} />
+                <Typography.Text className="site-header__profile-label">Профиль</Typography.Text>
+              </Space>
             </NavLink>
-            <button type="button" className="site-header__btn" onClick={() => setLoggedIn(false)}>
+            <Button size="small" className="site-header__logout-btn" onClick={() => setLoggedIn(false)}>
               Выйти
-            </button>
-          </>
+            </Button>
+          </Space>
         ) : (
-          <>
+          <Space size={8}>
             <NavLink to="/auth" className={navClass}>
               Войти
             </NavLink>
-            <NavLink to="/auth" className="site-header__btn site-header__btn--primary">
+            <Button
+              type="primary"
+              size="small"
+              className="site-header__gradient-btn"
+              onClick={() => navigate('/auth?mode=register')}
+            >
               Регистрация
-            </NavLink>
-          </>
+            </Button>
+          </Space>
         )}
       </div>
     </header>

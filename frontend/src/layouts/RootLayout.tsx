@@ -1,19 +1,41 @@
 import { Outlet } from 'react-router-dom'
+import { Button, Layout, Typography } from 'antd'
 import { AppHeader } from '@/components/AppHeader'
-import { SketchBlock } from '@/components/SketchBlock'
+
+const { Header, Content, Footer } = Layout
 
 export function RootLayout() {
   return (
-    <div className="app-shell">
-      <SketchBlock label="LAYOUT · site header">
+    <Layout className="site-layout">
+      <Header className="site-layout__header">
         <AppHeader />
-      </SketchBlock>
-
-      <SketchBlock label="LAYOUT · main · Outlet">
-        <main className="app-shell__outlet">
+      </Header>
+      <Content className="site-layout__content">
+        <div className="site-layout__content-inner">
           <Outlet />
-        </main>
-      </SketchBlock>
-    </div>
+        </div>
+      </Content>
+      <Footer className="site-layout__footer">
+        <div className="site-footer-grid">
+          <div>
+            <Typography.Text strong>Служба поддержки</Typography.Text>
+            <br />
+            <Typography.Text type="secondary">+7 (495) 984 25 13</Typography.Text>
+            <br />
+            <Typography.Text type="secondary">info@neoflex.ru</Typography.Text>
+          </div>
+          <div>
+            <Button shape="round" className="neo-contact-btn">
+              Связаться с нами
+            </Button>
+          </div>
+          <div>
+            <Typography.Text strong>NEO EDU</Typography.Text>
+            <br />
+            <Typography.Text type="secondary">Корпоративная LMS для ИТ-обучения</Typography.Text>
+          </div>
+        </div>
+      </Footer>
+    </Layout>
   )
 }

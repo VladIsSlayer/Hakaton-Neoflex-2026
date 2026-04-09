@@ -1,5 +1,19 @@
 import { Link } from 'react-router-dom'
-import { SketchBlock } from '@/components/SketchBlock'
+import {
+  Avatar,
+  Button,
+  Card,
+  Col,
+  Progress,
+  Row,
+  Space,
+  Statistic,
+  Table,
+  Tag,
+  Typography,
+} from 'antd'
+import { UserOutlined } from '@ant-design/icons'
+import { useState } from 'react'
 
 const COURSE_REVIEW_ROWS = [
   {
@@ -29,105 +43,133 @@ const COURSE_REVIEW_ROWS = [
 ] as const
 
 export function ProfilePage() {
+  const [telegramConnected, setTelegramConnected] = useState(false)
+  const columns = [
+    { title: 'Курс', dataIndex: 'course', key: 'course' },
+    { title: 'Задание', dataIndex: 'task', key: 'task' },
+    {
+      title: 'Статус',
+      dataIndex: 'status',
+      key: 'status',
+      render: (value: string) => {
+        if (value.includes('Отклон')) return <Tag color="#a40f4d">{value}</Tag>
+        if (value.includes('Принято')) return <Tag color="#1e084d">{value}</Tag>
+        if (value.includes('Проверено')) return <Tag color="#6b1cc8">{value}</Tag>
+        return <Tag color="#ff7a00">{value}</Tag>
+      },
+    },
+    { title: 'Итоговый балл', dataIndex: 'score', key: 'score' },
+  ]
+
   return (
-    <div className="profile-layout">
-      <SketchBlock label="PROFILE · пользователь">
-        <div className="profile-user-row">
-          <div className="profile-avatar" aria-hidden>
-            фото
-          </div>
-          <div className="profile-user-meta">
-            <p className="profile-user-name">Иван Петров</p>
-            <p className="sketch-muted profile-user-login">Логин: ivan.petrov · student@neoflex.demo</p>
-            <p className="sketch-muted">Роль: студент · Telegram: не привязан</p>
-          </div>
-        </div>
-      </SketchBlock>
+    <Space className="profile-page" direction="vertical" size={16} style={{ width: '100%' }}>
+      <Card>
+        <Row align="middle" gutter={[16, 16]}>
+          <Col>
+            <Avatar size={72} icon={<UserOutlined />} />
+          </Col>
+          <Col flex="auto">
+            <Typography.Title level={4} style={{ margin: 0 }}>
+              Иван Петров
+            </Typography.Title>
+            <Typography.Text type="secondary">ivan.petrov · student@neoflex.demo</Typography.Text>
+            <br />
+            <Tag color="#1e084d" style={{ marginTop: 8 }}>
+              Студент
+            </Tag>
+          </Col>
+          <Col>
+            {!telegramConnected ? (
+              <Button className="neo-purple-btn" onClick={() => setTelegramConnected(true)}>
+                Подключить Telegram
+              </Button>
+            ) : (
+              <Tag color="#1e084d">Telegram подключен</Tag>
+            )}
+          </Col>
+        </Row>
+      </Card>
 
-      <SketchBlock label="PROFILE · дашборд · метрики">
-        <div className="profile-metrics">
-          <div className="profile-metric">
-            <span className="profile-metric__value">3</span>
-            <span className="profile-metric__label">Активных курсов</span>
-          </div>
-          <div className="profile-metric">
-            <span className="profile-metric__value">1</span>
-            <span className="profile-metric__label">На проверке</span>
-          </div>
-          <div className="profile-metric">
-            <span className="profile-metric__value">72%</span>
-            <span className="profile-metric__label">Средний прогресс</span>
-          </div>
-          <div className="profile-metric">
-            <span className="profile-metric__value">12</span>
-            <span className="profile-metric__label">Решений за неделю</span>
-          </div>
-        </div>
-      </SketchBlock>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic title="Активных курсов" value={3} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic title="На проверке" value={1} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic title="Средний прогресс" value={72} suffix="%" />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic title="Решений за неделю" value={12} />
+          </Card>
+        </Col>
+      </Row>
 
-      <SketchBlock label="PROFILE · график активности">
-        <div className="profile-chart-placeholder" role="img" aria-label="Заглушка графика активности">
-          <span className="sketch-muted">Столбцы активности по дням (подключение API позже)</span>
-        </div>
-      </SketchBlock>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} xl={14}>
+          <Typography.Title level={5} style={{ marginBottom: 8 }}>
+            Статусы заданий (куратор / итог)
+          </Typography.Title>
+          <Table
+            rowKey={(row) => `${row.course}-${row.task}`}
+            columns={columns}
+            dataSource={COURSE_REVIEW_ROWS.map((row) => ({ ...row }))}
+            pagination={false}
+            size="small"
+          />
+        </Col>
+        <Col xs={24} xl={10}>
+          <Card title="Активные курсы">
+            <Space direction="vertical" size={14} style={{ width: '100%' }}>
+              <div>
+                <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+                  <Typography.Text strong>NeoFlex Bootcamp</Typography.Text>
+                  <Link className="neo-link" to="/courses/sample-course-id">
+                    Открыть
+                  </Link>
+                </Space>
+                <Progress percent={65} size="small" />
+              </div>
+              <div>
+                <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+                  <Typography.Text strong>DevOps трек</Typography.Text>
+                  <Link className="neo-link" to="/courses/sample-course-id">
+                    Открыть
+                  </Link>
+                </Space>
+                <Progress percent={20} size="small" />
+              </div>
+            </Space>
+          </Card>
+        </Col>
+      </Row>
 
-      <SketchBlock label="PROFILE · активные курсы">
-        <div className="profile-course-cards">
-          <div className="profile-course-card">
-            <strong>NeoFlex Bootcamp</strong>
-            <p className="sketch-muted">Прогресс 65% · последний: SQL-выборка</p>
-            <p>
-              <Link to="/courses/sample-course-id">К курсу</Link>
-            </p>
-          </div>
-          <div className="profile-course-card">
-            <strong>DevOps трек</strong>
-            <p className="sketch-muted">Прогресс 20% · последний: Git basics</p>
-            <p>
-              <Link to="/courses/sample-course-id">К курсу</Link>
-            </p>
-          </div>
-        </div>
-      </SketchBlock>
-
-      <SketchBlock label="PROFILE · статусы заданий (куратор / итог)">
-        <div className="profile-table-wrap">
-          <table className="profile-table">
-            <thead>
-              <tr>
-                <th>Курс</th>
-                <th>Задание</th>
-                <th>Статус</th>
-                <th>Итоговый балл</th>
-              </tr>
-            </thead>
-            <tbody>
-              {COURSE_REVIEW_ROWS.map((row) => (
-                <tr key={`${row.course}-${row.task}`}>
-                  <td>{row.course}</td>
-                  <td>{row.task}</td>
-                  <td>{row.status}</td>
-                  <td>{row.score}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </SketchBlock>
-
-      <SketchBlock label="PROFILE · матрица компетенций (radar)">
-        <div className="profile-radar-placeholder">
-          <span className="sketch-muted">Radar: Python, SQL, DevOps…</span>
-        </div>
-      </SketchBlock>
-
-      <SketchBlock label="PROFILE · последние решения (Judge0 / сабмиты)">
-        <ul className="sketch-list">
-          <li>Задача #12 · Python · success · 2 ч назад</li>
-          <li>Задача #08 · SQL · failed · вчера</li>
-          <li>Задача #03 · Python · success · 3 дня назад</li>
-        </ul>
-      </SketchBlock>
-    </div>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={12}>
+          <Card title="Матрица компетенций">
+            <div className="profile-radar-placeholder">
+              <Typography.Text type="secondary">Radar chart (скоро)</Typography.Text>
+            </div>
+          </Card>
+        </Col>
+        <Col xs={24} lg={12}>
+          <Card title="Последние решения">
+            <ul className="sketch-list">
+              <li>Задача #12 · Python · success · 2 ч назад</li>
+              <li>Задача #08 · SQL · failed · вчера</li>
+              <li>Задача #03 · Python · success · 3 дня назад</li>
+            </ul>
+          </Card>
+        </Col>
+      </Row>
+    </Space>
   )
 }
