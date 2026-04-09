@@ -89,3 +89,53 @@
 - [ ] **5.2 Webhook Engine:** Вместо Long-Polling настройте вебхук. Добавьте в Gin публичный роут `POST /api/tg/webhook`. Затем вызовите `setWebhook` метод API Telegram, чтобы он бомбил этот роут новыми сообщениями.
 - [ ] **5.3 Обработка Deep-Link:** В роуте вебхука распарсите команду `/start`. Если в тексте передан UUID (Например: `/start f47a...`), выполните в базе `UPDATE users SET tg_chat_id = {chat_id_из_json}`.
 - [ ] **5.4 Функция-Push:** Напишите простую функцию `func SendTgPush(userId string, tgChatId int, text string)` поверх обычного `net/http` клиента. Вызовите её в конце алгоритма Чекер логики и SVN листенера, чтобы присылать студенту пуш "Задание успешно проверено! Твой прогресс вырос на 10 баллов!".
+
+---
+
+## Новые задачи backend относительно текущего фронта
+
+Ниже задачи, которые появились после перехода фронта на модульный data-driven рендер (`content_blocks_json`) и расширения UX IDE/quiz.
+
+### 1) Auth и безопасность (обновленный приоритет P0)
+- [ ] Реализовать `POST /api/auth/login` как основной источник авторизации (заменить demo-state фронта).
+- [ ] В JWT обязательно пробрасывать `user_id`, `role`; добавить middleware с единым форматом `401/403`.
+- [ ] Дать endpoint `GET /api/users/me/profile`, который фронт сможет использовать без прямого Supabase-доступа.
+
+### 2) Контент-эндпоинты под модульный фронт
+- [ ] Обновить `GET /api/courses` так, чтобы он отдавал:
+  - `id`, `title`, `description`, `is_published`
+  - `content_blocks_json` (для курсового контентного окна).
+- [ ] Обновить `GET /api/courses/:id/lessons` так, чтобы он стабильно отдавал:
+  - `content_blocks_json` урока
+  - legacy-поля (`practice_*`, `quiz_*`, `ide_*`) как fallback на время миграции.
+- [ ] Добавить валидацию структуры модульных блоков (`text/video/quiz/ide`) при создании/обновлении контента модератором.
+
+### 3) Реальная проверка задач (вместо alert/mock)
+- [ ] Реализовать рабочую ручку проверки IDE/quiz:
+  - `POST /api/tasks/:task_id/check`
+  - вход: `user_code`, `language_id`/`language`, контекст задания
+  - выход: унифицированный JSON со статусом проверки.
+- [ ] Согласовать и зафиксировать статусную модель ответов:
+  - минимум: `queued`, `running`, `success`, `failed`
+  - опционально: `review_pending`, `reviewed`.
+- [ ] Сохранять результат в `SUBMISSIONS` и возвращать фронту полезные поля:
+  - `status`, `console`, `error`, `score`, `updated_progress_percent`.
+
+### 4) Прогресс, компетенции и дедупликация
+- [ ] После `success` обновлять `USER_COMPETENCIES` (+10, лимит 100).
+- [ ] Пересчитывать `ENROLLMENTS.progress_percent` после каждой проверки.
+- [ ] Исключить повторное начисление за уже успешно закрытую задачу (idempotent check).
+
+### 5) Code review / webhook-поток
+- [ ] Поднять `POST /webhooks/git` для merged PR flow.
+- [ ] Делать маппинг PR -> task/user и фиксировать статус как backend-source-of-truth.
+- [ ] Добавить защиту от дублей webhook-событий.
+
+### 6) Интеграционный контракт для фронта (обязательно перед переключением data layer)
+- [ ] Зафиксировать DTO для:
+  - auth,
+  - courses/lessons,
+  - check-result,
+  - profile/progress.
+- [ ] Согласовать единый формат ошибок (`code`, `message`, `details`) для всех ручек.
+- [ ] После этого фронт переводится с Supabase direct-read на backend API поэтапно.
