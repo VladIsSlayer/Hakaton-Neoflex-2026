@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"neoflex-lms/internal/apierr"
 	"neoflex-lms/internal/store"
 
 	"github.com/gin-gonic/gin"
@@ -23,10 +24,10 @@ func (h *Admin) UserStats(c *gin.Context) {
 	list, err := h.Store.ListStudentStatsByCourse(c.Request.Context(), courseID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "course not found"})
+			apierr.Write(c, http.StatusNotFound, apierr.CodeNotFound, "course not found", nil)
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		apierr.Write(c, http.StatusInternalServerError, apierr.CodeInternal, "internal error", nil)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{

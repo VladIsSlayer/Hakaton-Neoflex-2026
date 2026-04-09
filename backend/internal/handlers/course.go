@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 
+	"neoflex-lms/internal/apierr"
+	"neoflex-lms/internal/contentblocks"
 	"neoflex-lms/internal/store"
 
 	"github.com/gin-gonic/gin"
@@ -17,7 +19,16 @@ type Course struct {
 func (h *Course) ListPublished(c *gin.Context) {
 	list, err := h.Store.ListPublishedCourses(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		apierr.Write(c, http.StatusInternalServerError, apierr.CodeInternal, "internal error", nil)
+		return
+	}
+	c.JSON(http.StatusOK, list)
+}
+
+func (h *Course) ListCatalogLessons(c *gin.Context) {
+	list, err := h.Store.ListAllLessonsForPublishedCatalog(c.Request.Context())
+	if err != nil {
+		apierr.Write(c, http.StatusInternalServerError, apierr.CodeInternal, "internal error", nil)
 		return
 	}
 	c.JSON(http.StatusOK, list)
@@ -28,10 +39,10 @@ func (h *Course) LessonsForCourse(c *gin.Context) {
 	lessons, err := h.Store.ListLessonsForPublishedCourse(c.Request.Context(), courseID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "course not found or not published"})
+			apierr.Write(c, http.StatusNotFound, apierr.CodeNotFound, "course not found or not published", nil)
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		apierr.Write(c, http.StatusInternalServerError, apierr.CodeInternal, "internal error", nil)
 		return
 	}
 	c.JSON(http.StatusOK, lessons)
@@ -47,13 +58,17 @@ type createCourseRequest struct {
 func (h *Course) Create(c *gin.Context) {
 	var req createCourseRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		apierr.Write(c, http.StatusBadRequest, apierr.CodeInvalidRequest, "invalid request body", nil)
 		return
 	}
 	var blocks []byte
 	if len(req.ContentBlocksJSON) > 0 {
 		if !json.Valid(req.ContentBlocksJSON) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "content_blocks_json must be valid JSON"})
+			apierr.Write(c, http.StatusBadRequest, apierr.CodeInvalidRequest, "content_blocks_json must be valid JSON", nil)
+			return
+		}
+		if err := contentblocks.ValidateArray(req.ContentBlocksJSON); err != nil {
+			apierr.Write(c, http.StatusBadRequest, apierr.CodeInvalidRequest, err.Error(), nil)
 			return
 		}
 		blocks = req.ContentBlocksJSON
@@ -61,10 +76,10 @@ func (h *Course) Create(c *gin.Context) {
 	course, err := h.Store.CreateCourse(c.Request.Context(), req.Title, req.Description, req.IsPublished, blocks)
 	if err != nil {
 		if errors.Is(err, store.ErrEmptyTitle) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "title is required"})
+			apierr.Write(c, http.StatusBadRequest, apierr.CodeInvalidRequest, "title is required", nil)
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		apierr.Write(c, http.StatusInternalServerError, apierr.CodeInternal, "internal error", nil)
 		return
 	}
 	c.JSON(http.StatusCreated, course)

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"neoflex-lms/internal/apierr"
 	"neoflex-lms/internal/auth"
 	"neoflex-lms/internal/store"
 
@@ -36,32 +37,35 @@ func firstNonEmpty(parts ...string) string {
 	return "execution failed"
 }
 
+// executionPhaseCompleted — синхронный Judge0; queued/running зарезервированы под async.
+const executionPhaseCompleted = "completed"
+
 func (h *TaskCheck) Check(c *gin.Context) {
 	taskID := c.Param("task_id")
 	uidVal, ok := c.Get(auth.CtxUserID)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		apierr.Write(c, http.StatusUnauthorized, apierr.CodeUnauthorized, "unauthorized", nil)
 		return
 	}
 	userID, _ := uidVal.(string)
 
 	var req checkBody
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		apierr.Write(c, http.StatusBadRequest, apierr.CodeInvalidRequest, "invalid request body", nil)
 		return
 	}
 
 	task, err := h.Store.GetTask(c.Request.Context(), taskID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+			apierr.Write(c, http.StatusNotFound, apierr.CodeNotFound, "task not found", nil)
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		apierr.Write(c, http.StatusInternalServerError, apierr.CodeInternal, "internal error", nil)
 		return
 	}
 	if req.LanguageID != task.LanguageID {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "language_id does not match task"})
+		apierr.Write(c, http.StatusBadRequest, apierr.CodeInvalidRequest, "language_id does not match task", nil)
 		return
 	}
 
@@ -70,19 +74,22 @@ func (h *TaskCheck) Check(c *gin.Context) {
 
 	stdout, stderr, compileOut, executedOK, statusDesc, err := h.Runner.Run(ctx, task.LanguageID, req.UserCode)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{
-			"status": "failed",
-			"error":  "judge0 unavailable",
-			"detail": err.Error(),
-		})
+		apierr.Write(c, http.StatusBadGateway, apierr.CodeUpstream, "judge0 unavailable", gin.H{"detail": err.Error()})
 		return
 	}
 	if !executedOK {
 		msg := firstNonEmpty(compileOut, stderr, statusDesc, stdout)
 		c.JSON(http.StatusOK, gin.H{
-			"status":  "failed",
-			"error":   msg,
-			"console": strings.TrimSpace(stdout),
+			"status":                     "failed",
+			"phase":                      executionPhaseCompleted,
+			"execution_status":           "failed",
+			"error":                      msg,
+			"console":                    strings.TrimSpace(stdout),
+			"score":                      0,
+			"updated_progress_percent":   0,
+			"course_progress_percent":    0,
+			"competencies":               nil,
+			"already_solved":             false,
 		})
 		return
 	}
@@ -91,9 +98,16 @@ func (h *TaskCheck) Check(c *gin.Context) {
 	want := strings.TrimSpace(task.ReferenceAnswer)
 	if got != want {
 		c.JSON(http.StatusOK, gin.H{
-			"status":  "failed",
-			"error":   "output does not match expected answer",
-			"console": got,
+			"status":                     "failed",
+			"phase":                      executionPhaseCompleted,
+			"execution_status":           "failed",
+			"error":                      "output does not match expected answer",
+			"console":                    got,
+			"score":                      0,
+			"updated_progress_percent":   0,
+			"course_progress_percent":    0,
+			"competencies":               nil,
+			"already_solved":             false,
 		})
 		return
 	}
@@ -101,18 +115,28 @@ func (h *TaskCheck) Check(c *gin.Context) {
 	already, comps, pct, err := h.Store.RecordSuccessIfFirst(c.Request.Context(), userID, taskID, req.UserCode)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+			apierr.Write(c, http.StatusNotFound, apierr.CodeNotFound, "task not found", nil)
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		apierr.Write(c, http.StatusInternalServerError, apierr.CodeInternal, "internal error", nil)
 		return
 	}
 
+	score := 0
+	if !already {
+		score = 10
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"status":                  "success",
-		"console":                 strings.TrimSpace(stdout),
-		"competencies":            comps,
-		"course_progress_percent": pct,
-		"already_solved":          already,
+		"status":                     "success",
+		"phase":                      executionPhaseCompleted,
+		"execution_status":           "success",
+		"console":                    strings.TrimSpace(stdout),
+		"error":                      "",
+		"score":                      score,
+		"updated_progress_percent":   pct,
+		"course_progress_percent":    pct,
+		"competencies":               comps,
+		"already_solved":             already,
 	})
 }

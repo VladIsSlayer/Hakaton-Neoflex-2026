@@ -178,7 +178,8 @@ func (p *Postgres) ListLessonsForPublishedCourse(ctx context.Context, courseID s
 	const q = `
 SELECT l.id::text, l.course_id::text, l.title, l.order_index, l.content_body,
        l.content_blocks_json, l.video_embed_url, l.practice_kind, l.practice_title,
-       l.quiz_question, l.quiz_options_json, l.quiz_correct_option, l.ide_template, l.tests_json
+       l.quiz_question, l.quiz_options_json, l.quiz_correct_option, l.ide_template, l.tests_json,
+       (SELECT t.id::text FROM public.tasks t WHERE t.lesson_id = l.id ORDER BY t.id LIMIT 1) AS task_id
 FROM public.lessons l
 JOIN public.courses c ON c.id = l.course_id
 WHERE l.course_id = $1::uuid
@@ -205,6 +206,32 @@ ORDER BY l.order_index ASC`
 		return nil, ErrNotFound
 	}
 	return out, nil
+}
+
+func (p *Postgres) ListAllLessonsForPublishedCatalog(ctx context.Context) ([]Lesson, error) {
+	const q = `
+SELECT l.id::text, l.course_id::text, l.title, l.order_index, l.content_body,
+       l.content_blocks_json, l.video_embed_url, l.practice_kind, l.practice_title,
+       l.quiz_question, l.quiz_options_json, l.quiz_correct_option, l.ide_template, l.tests_json,
+       (SELECT t.id::text FROM public.tasks t WHERE t.lesson_id = l.id ORDER BY t.id LIMIT 1) AS task_id
+FROM public.lessons l
+JOIN public.courses c ON c.id = l.course_id
+WHERE c.is_published = true
+ORDER BY c.title ASC, l.order_index ASC`
+	rows, err := p.pool.Query(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Lesson
+	for rows.Next() {
+		l, err := scanLessonRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
 }
 
 func (p *Postgres) CreateCourse(ctx context.Context, title, description string, isPublished bool, contentBlocksJSON []byte) (Course, error) {
@@ -253,6 +280,197 @@ WHERE t.id = $1::uuid`
 	t.PromptText = nullStringOrEmpty(promptText)
 	t.TestsJSON = nullStringOrEmpty(testsJ)
 	return &t, nil
+}
+
+func (p *Postgres) GetTaskForPublishedLesson(ctx context.Context, lessonID string) (*Task, error) {
+	const q = `
+SELECT t.id::text, t.lesson_id::text, t.language_id, t.reference_answer, t.competency_id::text, coalesce(c.name, ''),
+       t.task_type, t.prompt_text, t.tests_json
+FROM public.tasks t
+JOIN public.lessons l ON l.id = t.lesson_id
+JOIN public.courses co ON co.id = l.course_id
+WHERE l.id = $1::uuid AND co.is_published = true
+ORDER BY t.id
+LIMIT 1`
+	var t Task
+	var taskType, promptText, testsJ sql.NullString
+	err := p.pool.QueryRow(ctx, q, strings.TrimSpace(lessonID)).
+		Scan(&t.ID, &t.LessonID, &t.LanguageID, &t.ReferenceAnswer, &t.CompetencyID, &t.CompetencyName,
+			&taskType, &promptText, &testsJ)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	t.TaskType = nullStringOrEmpty(taskType)
+	t.PromptText = nullStringOrEmpty(promptText)
+	t.TestsJSON = nullStringOrEmpty(testsJ)
+	return &t, nil
+}
+
+func (p *Postgres) ListEnrollmentCountsByCourse(ctx context.Context) ([]CourseEnrollmentCount, error) {
+	const q = `
+SELECT course_id::text, count(*)::int
+FROM public.enrollments
+GROUP BY course_id`
+	rows, err := p.pool.Query(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CourseEnrollmentCount
+	for rows.Next() {
+		var r CourseEnrollmentCount
+		if err := rows.Scan(&r.CourseID, &r.Enrollments); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (p *Postgres) BuildMeSnapshot(ctx context.Context, userID string) (*MeSnapshot, error) {
+	u, err := p.GetByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	comps, err := p.ListCompetencies(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	const enrollQ = `
+SELECT e.id::text, e.user_id::text, e.course_id::text, c.title, e.progress_percent
+FROM public.enrollments e
+JOIN public.courses c ON c.id = e.course_id
+WHERE e.user_id = $1::uuid`
+	erows, err := p.pool.Query(ctx, enrollQ, strings.TrimSpace(userID))
+	if err != nil {
+		return nil, err
+	}
+	type enrRow struct {
+		eid, uid, cid, title string
+		progress             int
+	}
+	var enrs []enrRow
+	for erows.Next() {
+		var r enrRow
+		if err := erows.Scan(&r.eid, &r.uid, &r.cid, &r.title, &r.progress); err != nil {
+			erows.Close()
+			return nil, err
+		}
+		enrs = append(enrs, r)
+	}
+	erows.Close()
+	if err := erows.Err(); err != nil {
+		return nil, err
+	}
+
+	lessonCountByCourse := make(map[string]int)
+	for _, r := range enrs {
+		var n int
+		if err := p.pool.QueryRow(ctx, `SELECT count(*)::int FROM public.lessons WHERE course_id = $1::uuid`, r.cid).Scan(&n); err != nil {
+			return nil, err
+		}
+		lessonCountByCourse[r.cid] = n
+	}
+
+	enrolled := make([]EnrolledCourseRow, 0, len(enrs))
+	for _, r := range enrs {
+		pct := r.progress
+		if pct < 0 {
+			pct = 0
+		}
+		if pct > 100 {
+			pct = 100
+		}
+		lt := lessonCountByCourse[r.cid]
+		lc := 0
+		if lt > 0 {
+			lc = (pct * lt + 50) / 100
+		}
+		enrolled = append(enrolled, EnrolledCourseRow{
+			EnrollmentID:     r.eid,
+			UserID:           r.uid,
+			CourseID:         r.cid,
+			CourseTitle:      r.title,
+			ProgressPercent:  pct,
+			LessonsTotal:     lt,
+			LessonsCompleted: lc,
+		})
+	}
+
+	const subQ = `
+SELECT s.id::text, s.task_id::text, s.status, le.id::text, le.course_id::text, le.title, co.title
+FROM public.submissions s
+JOIN public.tasks t ON t.id = s.task_id
+JOIN public.lessons le ON le.id = t.lesson_id
+JOIN public.courses co ON co.id = le.course_id
+WHERE s.user_id = $1::uuid
+ORDER BY s.id DESC
+LIMIT 200`
+	srows, err := p.pool.Query(ctx, subQ, strings.TrimSpace(userID))
+	if err != nil {
+		return nil, err
+	}
+	var subs []SubmissionSummary
+	var taskSt []ProfileTaskStatus
+	for srows.Next() {
+		var s SubmissionSummary
+		if err := srows.Scan(&s.ID, &s.TaskID, &s.Status, &s.LessonID, &s.CourseID, &s.LessonTitle, &s.CourseTitle); err != nil {
+			srows.Close()
+			return nil, err
+		}
+		subs = append(subs, s)
+		st := "На проверке"
+		score := "0"
+		if strings.EqualFold(s.Status, "success") {
+			st = "Принято"
+			score = "10"
+		} else if strings.EqualFold(s.Status, "failed") {
+			st = "Отклонено"
+		}
+		taskSt = append(taskSt, ProfileTaskStatus{
+			Course: s.CourseTitle,
+			Task:   s.LessonTitle,
+			Status: st,
+			Score:  score,
+		})
+	}
+	srows.Close()
+	if err := srows.Err(); err != nil {
+		return nil, err
+	}
+
+	var totalCat int
+	if err := p.pool.QueryRow(ctx, `SELECT count(*)::int FROM public.competencies`).Scan(&totalCat); err != nil {
+		return nil, err
+	}
+	avg := 0
+	if len(comps) > 0 {
+		sum := 0
+		for _, c := range comps {
+			sum += c.Level
+		}
+		avg = (sum + len(comps)/2) / len(comps)
+	}
+
+	recent := subs
+	if len(recent) > 5 {
+		recent = subs[:5]
+	}
+
+	return &MeSnapshot{
+		User:              *u,
+		Competencies:      comps,
+		EnrolledCourses:   enrolled,
+		Submissions:       subs,
+		RecentSubmissions: recent,
+		TaskStatuses:      taskSt,
+		AverageLevel:      avg,
+		TotalCompetencies: totalCat,
+	}, nil
 }
 
 func (p *Postgres) RecordSuccessIfFirst(ctx context.Context, userID, taskID, userCode string) (bool, []UserCompetency, int, error) {
@@ -511,10 +729,11 @@ func nullStringOrEmpty(ns sql.NullString) string {
 func scanLessonRow(row pgx.Row) (Lesson, error) {
 	var l Lesson
 	var blocks []byte
-	var video, practiceKind, practiceTitle, quizQ, quizOpts, quizCorrect, ideTpl, testsJ sql.NullString
+	var video, practiceKind, practiceTitle, quizQ, quizOpts, quizCorrect, ideTpl, testsJ, taskID sql.NullString
 	err := row.Scan(
 		&l.ID, &l.CourseID, &l.Title, &l.OrderIndex, &l.ContentBody,
 		&blocks, &video, &practiceKind, &practiceTitle, &quizQ, &quizOpts, &quizCorrect, &ideTpl, &testsJ,
+		&taskID,
 	)
 	if err != nil {
 		return Lesson{}, err
@@ -528,6 +747,7 @@ func scanLessonRow(row pgx.Row) (Lesson, error) {
 	l.QuizCorrectOption = nullStringPtr(quizCorrect)
 	l.IDETemplate = nullStringPtr(ideTpl)
 	l.LessonTestsJSON = nullStringPtr(testsJ)
+	l.TaskID = nullStringPtr(taskID)
 	return l, nil
 }
 
@@ -536,6 +756,8 @@ var _ CourseStore = (*Postgres)(nil)
 var _ TaskCheckStore = (*Postgres)(nil)
 var _ GitWebhookStore = (*Postgres)(nil)
 var _ AdminStatsStore = (*Postgres)(nil)
+var _ EnrollmentStatsStore = (*Postgres)(nil)
+var _ MeSnapshotStore = (*Postgres)(nil)
 
 func (p *Postgres) String() string {
 	return fmt.Sprintf("PostgresStore(hasGitBindings=%v)", p.hasGitBindings)

@@ -2,6 +2,7 @@ import { Button, Card, Col, Progress, Row, Space, Typography } from 'antd'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { fetchCourses, fetchLessons, fetchStudentSnapshot } from '@/api/catalog'
+import { useAuthStore } from '@/stores/authStore'
 
 const SERVICE_GROUPS = [
   {
@@ -35,9 +36,11 @@ export function LandingPage() {
     queryFn: fetchLessons,
     refetchOnMount: 'always',
   })
+  const isAuthenticated = useAuthStore((s) => Boolean(s.accessToken))
   const studentQuery = useQuery({
-    queryKey: ['student-snapshot', 'landing-v1'],
+    queryKey: ['student-snapshot', 'landing-v1', isAuthenticated],
     queryFn: fetchStudentSnapshot,
+    enabled: isAuthenticated,
     refetchOnMount: 'always',
   })
 

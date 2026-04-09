@@ -6,11 +6,11 @@ import (
 )
 
 type User struct {
-	ID           string
-	Email        string
-	PasswordHash string
-	Role         string
-	FullName     string
+	ID           string  `json:"id"`
+	Email        string  `json:"email"`
+	PasswordHash string  `json:"-"`
+	Role         string  `json:"role"`
+	FullName     string  `json:"full_name"`
 	TgChatID     *string `json:"tg_chat_id,omitempty"`
 }
 
@@ -49,11 +49,13 @@ type Lesson struct {
 	QuizCorrectOption   *string         `json:"quiz_correct_option,omitempty"`
 	IDETemplate         *string         `json:"ide_template,omitempty"`
 	LessonTestsJSON     *string         `json:"tests_json,omitempty"`
+	TaskID              *string         `json:"task_id,omitempty"`
 }
 
 type CourseStore interface {
 	ListPublishedCourses(ctx context.Context) ([]Course, error)
 	ListLessonsForPublishedCourse(ctx context.Context, courseID string) ([]Lesson, error)
+	ListAllLessonsForPublishedCatalog(ctx context.Context) ([]Lesson, error)
 	CreateCourse(ctx context.Context, title, description string, isPublished bool, contentBlocksJSON []byte) (Course, error)
 }
 
@@ -71,6 +73,7 @@ type Task struct {
 
 type TaskCheckStore interface {
 	GetTask(ctx context.Context, taskID string) (*Task, error)
+	GetTaskForPublishedLesson(ctx context.Context, lessonID string) (*Task, error)
 	RecordSuccessIfFirst(ctx context.Context, userID, taskID, userCode string) (alreadySolved bool, competencies []UserCompetency, courseProgressPercent int, err error)
 }
 
@@ -96,4 +99,57 @@ type GitWebhookStore interface {
 
 type AdminStatsStore interface {
 	ListStudentStatsByCourse(ctx context.Context, courseID string) ([]StudentCourseStat, error)
+}
+
+// CourseEnrollmentCount — число записей на курс (для витрины / дашборда).
+type CourseEnrollmentCount struct {
+	CourseID    string `json:"course_id"`
+	Enrollments int    `json:"enrollments"`
+}
+
+type EnrollmentStatsStore interface {
+	ListEnrollmentCountsByCourse(ctx context.Context) ([]CourseEnrollmentCount, error)
+}
+
+// MeSnapshot — агрегат для личного кабинета (thin client).
+type MeSnapshot struct {
+	User              User                 `json:"user"`
+	Competencies      []UserCompetency     `json:"competencies"`
+	EnrolledCourses   []EnrolledCourseRow  `json:"enrolled_courses"`
+	Submissions       []SubmissionSummary  `json:"submissions"`
+	RecentSubmissions []SubmissionSummary  `json:"recent_submissions"`
+	TaskStatuses      []ProfileTaskStatus  `json:"task_statuses"`
+	AverageLevel      int                  `json:"average_competency_level"`
+	TotalCompetencies int                  `json:"total_competencies_catalog"`
+}
+
+type EnrolledCourseRow struct {
+	EnrollmentID     string `json:"enrollment_id"`
+	UserID           string `json:"user_id"`
+	CourseID         string `json:"course_id"`
+	CourseTitle      string `json:"course_title"`
+	ProgressPercent  int    `json:"progress_percent"`
+	LessonsTotal     int    `json:"lessons_total"`
+	LessonsCompleted int    `json:"lessons_completed"`
+}
+
+type SubmissionSummary struct {
+	ID          string `json:"id"`
+	TaskID      string `json:"task_id"`
+	Status      string `json:"status"`
+	LessonID    string `json:"lesson_id"`
+	CourseID    string `json:"course_id"`
+	LessonTitle string `json:"lesson_title"`
+	CourseTitle string `json:"course_title"`
+}
+
+type ProfileTaskStatus struct {
+	Course string `json:"course"`
+	Task   string `json:"task"`
+	Status string `json:"status"`
+	Score  string `json:"score"`
+}
+
+type MeSnapshotStore interface {
+	BuildMeSnapshot(ctx context.Context, userID string) (*MeSnapshot, error)
 }

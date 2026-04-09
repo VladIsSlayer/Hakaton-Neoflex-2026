@@ -4,11 +4,11 @@ import { SearchOutlined } from '@ant-design/icons'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchCourseAudienceStats, fetchCourses, fetchLessonProgressForStudent, fetchLessons } from '@/api/catalog'
-import { useAuthUiStore } from '@/stores/authUiStore'
+import { useAuthStore } from '@/stores/authStore'
 
 /** Агрегатор «продолжить обучение»: последний урок, список в процессе */
 export function LessonsPage() {
-  const isLoggedIn = useAuthUiStore((s) => s.isLoggedIn)
+  const isLoggedIn = useAuthStore((s) => Boolean(s.accessToken))
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const pageSize = 5

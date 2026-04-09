@@ -294,8 +294,101 @@ func (m *Memory) ListLessonsForPublishedCourse(_ context.Context, courseID strin
 	}
 	list := m.lessonsByCourse[courseID]
 	out := make([]Lesson, len(list))
-	copy(out, list)
+	for i := range list {
+		out[i] = list[i]
+		out[i].TaskID = m.taskIDForLessonLocked(list[i].ID)
+	}
 	return out, nil
+}
+
+func (m *Memory) ListAllLessonsForPublishedCatalog(_ context.Context) ([]Lesson, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var out []Lesson
+	for _, c := range m.coursesByID {
+		if !c.IsPublished {
+			continue
+		}
+		for _, les := range m.lessonsByCourse[c.ID] {
+			l := les
+			l.TaskID = m.taskIDForLessonLocked(l.ID)
+			out = append(out, l)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CourseID != out[j].CourseID {
+			ci := m.coursesByID[out[i].CourseID]
+			cj := m.coursesByID[out[j].CourseID]
+			if ci != nil && cj != nil && ci.Title != cj.Title {
+				return ci.Title < cj.Title
+			}
+		}
+		return out[i].OrderIndex < out[j].OrderIndex
+	})
+	return out, nil
+}
+
+func (m *Memory) taskIDForLessonLocked(lessonID string) *string {
+	for _, t := range m.tasksByID {
+		if t.LessonID == lessonID {
+			s := t.ID
+			return &s
+		}
+	}
+	return nil
+}
+
+func (m *Memory) GetTaskForPublishedLesson(_ context.Context, lessonID string) (*Task, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	cid := m.lessonCourse[lessonID]
+	if cid == "" {
+		return nil, ErrNotFound
+	}
+	c := m.coursesByID[cid]
+	if c == nil || !c.IsPublished {
+		return nil, ErrNotFound
+	}
+	for _, t := range m.tasksByID {
+		if t.LessonID == lessonID {
+			tCopy := *t
+			return &tCopy, nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
+func (m *Memory) ListEnrollmentCountsByCourse(_ context.Context) ([]CourseEnrollmentCount, error) {
+	return nil, nil
+}
+
+func (m *Memory) BuildMeSnapshot(ctx context.Context, userID string) (*MeSnapshot, error) {
+	u, err := m.GetByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	comps, err := m.ListCompetencies(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	avg := 0
+	if len(comps) > 0 {
+		sum := 0
+		for _, c := range comps {
+			sum += c.Level
+		}
+		avg = (sum + len(comps)/2) / len(comps)
+	}
+	return &MeSnapshot{
+		User:              *u,
+		Competencies:      comps,
+		EnrolledCourses:   nil,
+		Submissions:       nil,
+		RecentSubmissions: nil,
+		TaskStatuses:      nil,
+		AverageLevel:      avg,
+		TotalCompetencies: 0,
+	}, nil
 }
 
 func (m *Memory) CreateCourse(_ context.Context, title, description string, isPublished bool, contentBlocksJSON []byte) (Course, error) {

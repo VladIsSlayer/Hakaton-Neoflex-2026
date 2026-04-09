@@ -2,7 +2,15 @@ import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Button, Card, Input, Radio, Select, Space, Typography, message } from 'antd'
 import { useQuery } from '@tanstack/react-query'
-import { fetchCourseById, fetchLessonContentConfig, fetchLessonsByCourse, type LessonContentBlock } from '@/api/catalog'
+import {
+  fetchCourseById,
+  fetchLessonContentConfig,
+  fetchLessonTaskMeta,
+  fetchLessonsByCourse,
+  submitTaskCheck,
+  type LessonContentBlock,
+} from '@/api/catalog'
+import { getAccessToken } from '@/api/client'
 
 export function LessonPlayerPage() {
   const { courseId, lessonId } = useParams()
@@ -38,30 +46,38 @@ export function LessonPlayerPage() {
     message.success(`Ответ "${(answer ?? '—').toUpperCase()}" отправлен на проверку`)
   }
 
-  const handleSendMaterialAsJson = (block: Extract<LessonContentBlock, { type: 'ide' }>, blockIndex: number) => {
-    const payload = {
-      courseId: courseId ?? null,
-      lessonId: lessonId ?? null,
-      blockIndex,
-      language,
-      task: block.task ?? lessonContent?.ideTask ?? null,
-      code: ideCode || block.template || lessonContent?.ideTemplate || '',
-      tests: block.tests,
-      quizAnswers,
-      sentAt: new Date().toISOString(),
+  const handleSendMaterialAsJson = async (block: Extract<LessonContentBlock, { type: 'ide' }>) => {
+    if (!getAccessToken()) {
+      message.warning('Войдите в систему, чтобы отправить код на проверку.')
+      return
     }
-    alert(`DEMO CHECK REQUEST:\n\n${JSON.stringify(payload, null, 2)}`)
-    const mockBackendResponse = {
-      status: 'queued',
-      message: 'Запрос принят. В будущем здесь будет реальный ответ бэка.',
-      receivedAt: new Date().toISOString(),
-      checks: [
-        { name: 'syntax', result: 'pending' },
-        { name: 'tests', result: 'pending' },
-      ],
+    if (!lessonId) {
+      message.error('Не выбран урок')
+      return
     }
-    setBackendResponsePreview(JSON.stringify(mockBackendResponse, null, 2))
-    message.success('Проверка вызвала alert. Окно ниже зарезервировано под ответ бэка.')
+    const meta = await fetchLessonTaskMeta(lessonId)
+    if (!meta) {
+      message.error('Для этого урока нет задачи в БД (tasks). Добавьте задачу или проверьте курс.')
+      return
+    }
+    const code = ideCode || block.template || lessonContent?.ideTemplate || ''
+    if (!code.trim()) {
+      message.warning('Введите код в редакторе')
+      return
+    }
+    try {
+      const res = await submitTaskCheck(meta.task_id, code, meta.language_id)
+      setBackendResponsePreview(JSON.stringify(res, null, 2))
+      if (res.status === 'success') {
+        message.success('Задача принята')
+      } else {
+        message.info('Проверка завершилась без успеха — см. JSON ниже')
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Ошибка сети'
+      message.error(msg)
+      setBackendResponsePreview(JSON.stringify({ error: msg }, null, 2))
+    }
   }
 
   const renderBlock = (block: LessonContentBlock, idx: number) => {
@@ -163,7 +179,7 @@ export function LessonPlayerPage() {
               <Button
                 type="primary"
                 className="neo-gradient-button"
-                onClick={() => handleSendMaterialAsJson(block, idx)}
+                onClick={() => void handleSendMaterialAsJson(block)}
               >
                 Проверить ответ (JSON)
               </Button>

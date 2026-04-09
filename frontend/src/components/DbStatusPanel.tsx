@@ -1,35 +1,33 @@
 import { useQuery } from '@tanstack/react-query'
-import { getSupabase, isSupabaseConfigured } from '@/api/supabase'
 
-/**
- * Проверка доступности Supabase: конфиг + простой запрос к таблице courses (если есть).
- */
+/** Проверка Go API и PostgreSQL через GET /api/health. */
 export function DbStatusPanel() {
   const query = useQuery({
-    queryKey: ['supabase', 'courses-head'],
+    queryKey: ['backend-health'],
     queryFn: async () => {
-      const sb = getSupabase()
-      if (!sb) {
-        throw new Error('Клиент не создан: задайте API_SUPABASE_URL и API_SUPABASE_ANON_KEY в корневом .env')
+      const base = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+      if (!base) {
+        throw new Error('VITE_API_URL не задан (например http://localhost:8080)')
       }
-      const { error } = await sb.from('courses').select('id').limit(1)
-      if (error) throw error
-      return 'connected'
+      const res = await fetch(`${base}/api/health`)
+      const text = await res.text()
+      let body: unknown = null
+      if (text) {
+        try {
+          body = JSON.parse(text) as unknown
+        } catch {
+          body = text
+        }
+      }
+      if (!res.ok) {
+        throw new Error(typeof body === 'object' && body && 'message' in body ? String((body as { message?: string }).message) : res.statusText)
+      }
+      return body
     },
-    enabled: isSupabaseConfigured(),
     retry: 1,
   })
 
-  if (!isSupabaseConfigured()) {
-    return (
-      <p className="sketch-muted">
-        Supabase не сконфигурирован. В корне репозитория в <code>.env</code> задайте{' '}
-        <code>API_SUPABASE_URL</code> и <code>API_SUPABASE_ANON_KEY</code>.
-      </p>
-    )
-  }
-
-  if (query.isPending) return <p className="sketch-muted">Запрос к БД…</p>
+  if (query.isPending) return <p className="sketch-muted">Запрос к API…</p>
   if (query.isError) {
     return (
       <p className="sketch-error">
@@ -37,5 +35,12 @@ export function DbStatusPanel() {
       </p>
     )
   }
-  return <p className="sketch-ok">Ответ Supabase (courses): ок</p>
+  const data = query.data as { status?: string; db?: string } | null
+  const db = data?.db === 'up' ? 'PostgreSQL: ок' : data?.db === 'down' ? 'БД: недоступна' : ''
+  return (
+    <p className="sketch-ok">
+      Backend: {data?.status ?? 'ok'}
+      {db ? ` · ${db}` : ''}
+    </p>
+  )
 }

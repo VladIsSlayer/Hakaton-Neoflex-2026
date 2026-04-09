@@ -1,4 +1,4 @@
-import { getSupabase } from '@/api/supabase'
+import { ApiError, apiFetch, getAccessToken } from '@/api/client'
 
 export type CourseRow = {
   id: string
@@ -24,21 +24,7 @@ export type LessonRow = {
   ide_template?: string | null
   tests_json?: string | null
   content_blocks_json?: unknown
-}
-
-type EnrollmentRow = {
-  id: string
-  user_id: string
-  course_id: string
-  progress_percent?: number | null
-}
-
-type UserRow = {
-  id: string
-  email?: string | null
-  full_name?: string | null
-  role?: string | null
-  tg_chat_id?: string | null
+  task_id?: string | null
 }
 
 export type StudentCourseProgress = {
@@ -52,33 +38,14 @@ export type StudentCourseProgress = {
 }
 
 export type StudentSnapshot = {
-  user: UserRow | null
+  user: {
+    id: string
+    email?: string | null
+    full_name?: string | null
+    role?: string | null
+    tg_chat_id?: string | null
+  } | null
   enrolledCourses: StudentCourseProgress[]
-}
-
-type TaskRow = {
-  id: string
-  lesson_id: string
-  language_id?: number | null
-  competency_id?: string | null
-}
-
-type SubmissionRow = {
-  id: string
-  user_id: string
-  task_id: string
-  status: string
-}
-
-type CompetencyRow = {
-  id: string
-  name: string
-}
-
-type UserCompetencyRow = {
-  user_id: string
-  competency_id: string
-  level: number
 }
 
 export type LessonProgressItem = {
@@ -128,53 +95,61 @@ export type LessonContentBlock =
   | { type: 'quiz'; title?: string; question: string; options: string[]; correctOption?: string | null }
   | { type: 'ide'; title?: string; language?: string; task?: string; template: string; tests: Array<{ input: string; expected: string }> }
 
-async function selectFirstAvailable<T>(tables: string[], selectClause: string): Promise<T[]> {
-  const sb = getSupabase()
-  if (!sb) throw new Error('Supabase не сконфигурирован')
-
-  let lastError: unknown = null
-  for (const table of tables) {
-    const { data, error } = await sb.from(table).select(selectClause)
-    if (!error && data) return data as T[]
-    lastError = error
+type MeSnapshotDTO = {
+  user: {
+    id: string
+    email: string
+    full_name: string
+    role: string
+    tg_chat_id?: string
   }
-  throw lastError instanceof Error ? lastError : new Error('Не удалось прочитать таблицу')
+  enrolled_courses: Array<{
+    enrollment_id: string
+    user_id: string
+    course_id: string
+    course_title: string
+    progress_percent: number
+    lessons_total: number
+    lessons_completed: number
+  }>
+  submissions: Array<{
+    id: string
+    task_id: string
+    status: string
+    lesson_id: string
+    course_id: string
+    lesson_title: string
+    course_title: string
+  }>
+  recent_submissions: Array<{
+    id: string
+    task_id: string
+    status: string
+    lesson_title: string
+    course_title: string
+  }>
+  task_statuses: Array<{
+    course: string
+    task: string
+    status: string
+    score: string
+  }>
+  average_competency_level: number
+  total_competencies_catalog: number
+}
+
+type EnrollmentCountRow = {
+  course_id: string
+  enrollments: number
 }
 
 export async function fetchCourses(): Promise<CourseRow[]> {
-  const rows = await selectFirstAvailable<CourseRow>(
-    ['courses', 'COURSES'],
-    'id,title,description,is_published,content_blocks_json'
-  )
-  return rows.filter((course) => course.is_published === true)
+  return apiFetch<CourseRow[]>('/api/courses', { method: 'GET' })
 }
 
 export async function fetchLessons(): Promise<LessonRow[]> {
-  const publishedCourses = await fetchCourses()
-  const publishedCourseIds = new Set(publishedCourses.map((course) => course.id))
-  const rows = await selectFirstAvailable<LessonRow>(
-    ['lessons', 'LESSONS'],
-    [
-      'id',
-      'course_id',
-      'title',
-      'order_index',
-      'content_body',
-      'video_embed_url',
-      'practice_kind',
-      'practice_title',
-      'quiz_question',
-      'quiz_options_json',
-      'quiz_correct_option',
-      'ide_task',
-      'ide_template',
-      'tests_json',
-      'content_blocks_json',
-    ].join(',')
-  )
-  return rows
-    .filter((lesson) => publishedCourseIds.has(lesson.course_id))
-    .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
+  const rows = await apiFetch<LessonRow[]>('/api/lessons', { method: 'GET' })
+  return [...rows].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
 }
 
 export async function fetchCourseById(courseId: string): Promise<CourseRow | null> {
@@ -193,232 +168,150 @@ export async function fetchLessonsByCourse(courseId: string): Promise<LessonRow[
   return all.filter((lesson) => lesson.course_id === courseId)
 }
 
-export async function fetchStudentSnapshot(): Promise<StudentSnapshot> {
-  const [courses, lessons, enrollments, users] = await Promise.all([
-    fetchCourses(),
-    fetchLessons(),
-    selectFirstAvailable<EnrollmentRow>(
-      ['enrollments', 'ENROLLMENTS'],
-      'id,user_id,course_id,progress_percent'
-    ).catch(() => []),
-    selectFirstAvailable<UserRow>(
-      ['users', 'USERS'],
-      'id,email,full_name,role,tg_chat_id'
-    ).catch(() => []),
-  ])
-
-  const activeUser =
-    users.find((user) => user.email?.toLowerCase() === 'user 1@neoedu.local') ??
-    users.find((user) => user.role === 'student') ??
-    users[0] ??
-    null
-  const filteredEnrollments = activeUser
-    ? enrollments.filter((enrollment) => enrollment.user_id === activeUser.id)
-    : enrollments
-
-  const courseMap = new Map(courses.map((course) => [course.id, course]))
-  const lessonsByCourse = new Map<string, number>()
-  for (const lesson of lessons) {
-    lessonsByCourse.set(lesson.course_id, (lessonsByCourse.get(lesson.course_id) ?? 0) + 1)
-  }
-
-  const enrolledCourses: StudentCourseProgress[] = filteredEnrollments
-    .map((enrollment) => {
-      const course = courseMap.get(enrollment.course_id)
-      if (!course) return null
-      const lessonsTotal = lessonsByCourse.get(course.id) ?? 0
-      const progress = Math.max(0, Math.min(100, Math.round(enrollment.progress_percent ?? 0)))
-      const lessonsCompleted = lessonsTotal > 0 ? Math.round((progress / 100) * lessonsTotal) : 0
-
-      return {
-        enrollmentId: enrollment.id,
-        userId: enrollment.user_id,
-        courseId: course.id,
-        courseTitle: course.title,
-        progressPercent: progress,
-        lessonsTotal,
-        lessonsCompleted,
-      }
-    })
-    .filter((item): item is StudentCourseProgress => item !== null)
-
-  return {
-    user: activeUser,
-    enrolledCourses,
+async function fetchMeSnapshot(): Promise<MeSnapshotDTO | null> {
+  if (!getAccessToken()) return null
+  try {
+    return await apiFetch<MeSnapshotDTO>('/api/users/me/snapshot', { method: 'GET', auth: true })
+  } catch (e) {
+    if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+      return null
+    }
+    throw e
   }
 }
 
-async function getCurrentStudentUser(): Promise<UserRow | null> {
-  const users = await selectFirstAvailable<UserRow>(
-    ['users', 'USERS'],
-    'id,email,full_name,role,tg_chat_id'
-  ).catch(() => [])
-  if (users.length === 0) return null
-  return (
-    users.find((user) => user.email?.toLowerCase() === 'user 1@neoedu.local') ??
-    users.find((user) => user.role === 'student') ??
-    users[0]
-  )
+export async function fetchStudentSnapshot(): Promise<StudentSnapshot> {
+  const snap = await fetchMeSnapshot()
+  if (!snap) {
+    return { user: null, enrolledCourses: [] }
+  }
+  return {
+    user: {
+      id: snap.user.id,
+      email: snap.user.email,
+      full_name: snap.user.full_name,
+      role: snap.user.role,
+      tg_chat_id: snap.user.tg_chat_id ?? null,
+    },
+    enrolledCourses: snap.enrolled_courses.map((e) => ({
+      enrollmentId: e.enrollment_id,
+      userId: e.user_id,
+      courseId: e.course_id,
+      courseTitle: e.course_title,
+      progressPercent: Math.max(0, Math.min(100, Math.round(e.progress_percent ?? 0))),
+      lessonsTotal: e.lessons_total ?? 0,
+      lessonsCompleted: e.lessons_completed ?? 0,
+    })),
+  }
+}
+
+export async function fetchLessonTaskMeta(
+  lessonId: string
+): Promise<{ task_id: string; language_id: number } | null> {
+  try {
+    return await apiFetch<{ task_id: string; language_id: number }>(
+      `/api/lessons/${encodeURIComponent(lessonId)}/task`,
+      { method: 'GET' }
+    )
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) {
+      return null
+    }
+    throw e
+  }
+}
+
+export async function submitTaskCheck(
+  taskId: string,
+  userCode: string,
+  languageId: number
+): Promise<Record<string, unknown>> {
+  return apiFetch<Record<string, unknown>>(`/api/tasks/${encodeURIComponent(taskId)}/check`, {
+    method: 'POST',
+    auth: true,
+    body: JSON.stringify({ user_code: userCode, language_id: languageId }),
+  })
 }
 
 export async function fetchLessonProgressForStudent(): Promise<LessonProgressItem[]> {
-  const [user, courses, lessons, tasks, submissions, enrollments] = await Promise.all([
-    getCurrentStudentUser(),
-    fetchCourses(),
-    fetchLessons(),
-    selectFirstAvailable<TaskRow>(
-      ['tasks', 'TASKS'],
-      'id,lesson_id,language_id,competency_id'
-    ).catch(() => []),
-    selectFirstAvailable<SubmissionRow>(
-      ['submissions', 'SUBMISSIONS'],
-      'id,user_id,task_id,status'
-    ).catch(() => []),
-    selectFirstAvailable<EnrollmentRow>(
-      ['enrollments', 'ENROLLMENTS'],
-      'id,user_id,course_id,progress_percent'
-    ).catch(() => []),
-  ])
-
+  const [courses, lessons, snap] = await Promise.all([fetchCourses(), fetchLessons(), fetchMeSnapshot()])
   const courseMap = new Map(courses.map((course) => [course.id, course.title]))
-  const progressByCourseId = new Map(
-    enrollments
-      .filter((enrollment) => !user || enrollment.user_id === user.id)
-      .map((enrollment) => [
-        enrollment.course_id,
-        Math.max(0, Math.min(100, Math.round(enrollment.progress_percent ?? 0))),
-      ])
-  )
+  const progressByCourseId = new Map<string, number>()
+  if (snap) {
+    for (const e of snap.enrolled_courses) {
+      progressByCourseId.set(
+        e.course_id,
+        Math.max(0, Math.min(100, Math.round(e.progress_percent ?? 0)))
+      )
+    }
+  }
+  const taskByLesson = new Map<string, string>()
+  for (const lesson of lessons) {
+    if (lesson.task_id) {
+      taskByLesson.set(lesson.id, lesson.task_id)
+    }
+  }
+  const submissionByTask = new Map<string, { status: string }>()
+  if (snap) {
+    for (const s of snap.submissions) {
+      submissionByTask.set(s.task_id, { status: s.status })
+    }
+  }
 
-  const taskByLesson = new Map(tasks.map((task) => [task.lesson_id, task.id]))
-  const submissionByTask = new Map(
-    submissions
-      .filter((submission) => !user || submission.user_id === user.id)
-      .map((submission) => [submission.task_id, submission])
-  )
-
-  return lessons
-    .map((lesson) => {
-      const taskId = taskByLesson.get(lesson.id)
-      const submission = taskId ? submissionByTask.get(taskId) : undefined
-      const courseTitle = courseMap.get(lesson.course_id) ?? 'Курс'
-      const progress = progressByCourseId.get(lesson.course_id) ?? (submission ? 100 : 0)
-      return {
-        lessonId: lesson.id,
-        courseId: lesson.course_id,
-        lessonTitle: lesson.title,
-        courseTitle,
-        progressPercent: progress,
-        status: progress > 0 ? 'в процессе' : 'не начат',
-      }
-    })
-}
-
-export async function fetchProfileTaskStatuses(): Promise<ProfileTaskStatusRow[]> {
-  const [user, courses, lessons, tasks, submissions] = await Promise.all([
-    getCurrentStudentUser(),
-    fetchCourses(),
-    fetchLessons(),
-    selectFirstAvailable<TaskRow>(
-      ['tasks', 'TASKS'],
-      'id,lesson_id,language_id,competency_id'
-    ).catch(() => []),
-    selectFirstAvailable<SubmissionRow>(
-      ['submissions', 'SUBMISSIONS'],
-      'id,user_id,task_id,status'
-    ).catch(() => []),
-  ])
-
-  const lessonsById = new Map(lessons.map((lesson) => [lesson.id, lesson]))
-  const courseById = new Map(courses.map((course) => [course.id, course]))
-  const tasksById = new Map(tasks.map((task) => [task.id, task]))
-  const userSubmissions = submissions.filter((submission) => !user || submission.user_id === user.id)
-
-  return userSubmissions.map((submission) => {
-    const task = tasksById.get(submission.task_id)
-    const lesson = task ? lessonsById.get(task.lesson_id) : undefined
-    const course = lesson ? courseById.get(lesson.course_id) : undefined
-    const success = submission.status.toLowerCase() === 'success'
+  return lessons.map((lesson) => {
+    const taskId = taskByLesson.get(lesson.id)
+    const submission = taskId ? submissionByTask.get(taskId) : undefined
+    const courseTitle = courseMap.get(lesson.course_id) ?? 'Курс'
+    const progress = progressByCourseId.get(lesson.course_id) ?? (submission ? 100 : 0)
     return {
-      course: course?.title ?? 'Курс',
-      task: lesson?.title ?? 'Задание',
-      status: success ? 'Принято' : 'Отклонено',
-      score: success ? '10' : '0',
+      lessonId: lesson.id,
+      courseId: lesson.course_id,
+      lessonTitle: lesson.title,
+      courseTitle,
+      progressPercent: progress,
+      status: progress > 0 ? 'в процессе' : 'не начат',
     }
   })
 }
 
+export async function fetchProfileTaskStatuses(): Promise<ProfileTaskStatusRow[]> {
+  const snap = await fetchMeSnapshot()
+  if (!snap) return []
+  return snap.task_statuses.map((row) => ({
+    course: row.course,
+    task: row.task,
+    status: row.status,
+    score: row.score,
+  }))
+}
+
 export async function fetchRecentSolutions(): Promise<UserSolutionRow[]> {
-  const [user, courses, lessons, tasks, submissions] = await Promise.all([
-    getCurrentStudentUser(),
-    fetchCourses(),
-    fetchLessons(),
-    selectFirstAvailable<TaskRow>(
-      ['tasks', 'TASKS'],
-      'id,lesson_id,language_id,competency_id'
-    ).catch(() => []),
-    selectFirstAvailable<SubmissionRow>(
-      ['submissions', 'SUBMISSIONS'],
-      'id,user_id,task_id,status'
-    ).catch(() => []),
-  ])
-
-  const lessonsById = new Map(lessons.map((lesson) => [lesson.id, lesson]))
-  const courseById = new Map(courses.map((course) => [course.id, course]))
-  const tasksById = new Map(tasks.map((task) => [task.id, task]))
-
-  return submissions
-    .filter((submission) => !user || submission.user_id === user.id)
-    .slice(0, 5)
-    .map((submission) => {
-      const task = tasksById.get(submission.task_id)
-      const lesson = task ? lessonsById.get(task.lesson_id) : undefined
-      const course = lesson ? courseById.get(lesson.course_id) : undefined
-      return {
-        id: submission.id,
-        title: lesson?.title ?? 'Задание',
-        status: submission.status,
-        courseTitle: course?.title ?? 'Курс',
-      }
-    })
+  const snap = await fetchMeSnapshot()
+  if (!snap) return []
+  return snap.recent_submissions.map((s) => ({
+    id: s.id,
+    title: s.lesson_title,
+    status: s.status,
+    courseTitle: s.course_title,
+  }))
 }
 
 export async function fetchUserCompetencyStats(): Promise<{ averageLevel: number; totalCompetencies: number }> {
-  const [user, rows, competencies] = await Promise.all([
-    getCurrentStudentUser(),
-    selectFirstAvailable<UserCompetencyRow>(
-      ['user_competencies', 'USER_COMPETENCIES'],
-      'user_id,competency_id,level'
-    ).catch(() => []),
-    selectFirstAvailable<CompetencyRow>(
-      ['competencies', 'COMPETENCIES'],
-      'id,name'
-    ).catch(() => []),
-  ])
-
-  const userRows = rows.filter((row) => !user || row.user_id === user.id)
-  const totalCompetencies = competencies.length
-  const averageLevel = userRows.length > 0
-    ? Math.round(userRows.reduce((sum, row) => sum + row.level, 0) / userRows.length)
-    : 0
-
-  return { averageLevel, totalCompetencies }
+  const snap = await fetchMeSnapshot()
+  if (!snap) {
+    return { averageLevel: 0, totalCompetencies: 0 }
+  }
+  return {
+    averageLevel: snap.average_competency_level ?? 0,
+    totalCompetencies: snap.total_competencies_catalog ?? 0,
+  }
 }
 
 export async function fetchCourseAudienceStats(): Promise<CourseAudienceStat[]> {
-  const enrollments = await selectFirstAvailable<EnrollmentRow>(
-    ['enrollments', 'ENROLLMENTS'],
-    'id,user_id,course_id,progress_percent'
-  ).catch(() => [])
-
-  const counts = new Map<string, number>()
-  for (const enrollment of enrollments) {
-    counts.set(enrollment.course_id, (counts.get(enrollment.course_id) ?? 0) + 1)
-  }
-
-  return Array.from(counts.entries()).map(([courseId, enrollmentsCount]) => ({
-    courseId,
-    enrollments: enrollmentsCount,
+  const rows = await apiFetch<EnrollmentCountRow[]>('/api/stats/course-enrollments', { method: 'GET' })
+  return rows.map((r) => ({
+    courseId: r.course_id,
+    enrollments: r.enrollments,
   }))
 }
 
@@ -477,7 +370,10 @@ function parseContentBlocks(value: unknown): LessonContentBlock[] {
       } else if (type === 'ide') {
         const template = String(raw?.template ?? '')
         const tests = Array.isArray(raw?.tests)
-          ? raw.tests.map((test: any) => ({ input: String(test?.input ?? ''), expected: String(test?.expected ?? '') }))
+          ? raw.tests.map((test: { input?: unknown; expected?: unknown }) => ({
+              input: String(test?.input ?? ''),
+              expected: String(test?.expected ?? ''),
+            }))
           : []
         blocks.push({
           type: 'ide',
@@ -541,4 +437,3 @@ export async function fetchLessonContentConfig(courseId: string, lessonId: strin
     blocks: parsedBlocks.length > 0 ? parsedBlocks : fallbackBlocks,
   }
 }
-

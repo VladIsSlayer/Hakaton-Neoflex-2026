@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { fetchCourseAudienceStats, fetchCourses, fetchStudentSnapshot } from '@/api/catalog'
-import { useAuthUiStore } from '@/stores/authUiStore'
+import { useAuthStore } from '@/stores/authStore'
 
 const MOCK_COURSES = [
   { id: '1', title: 'Python Core', level: 'Junior', progress: 72, skill: 'PY', enrollments: 421, sticker: 'TOP' },
@@ -22,7 +22,7 @@ const MOCK_COURSES = [
 
 export function DashboardPage() {
   const navigate = useNavigate()
-  const isLoggedIn = useAuthUiStore((s) => s.isLoggedIn)
+  const isLoggedIn = useAuthStore((s) => Boolean(s.accessToken))
   const [page, setPage] = useState(1)
   const [activeFilter, setActiveFilter] = useState('Все отрасли')
   const [searchOpen, setSearchOpen] = useState(false)

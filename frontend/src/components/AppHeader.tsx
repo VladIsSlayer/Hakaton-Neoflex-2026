@@ -1,22 +1,20 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { Avatar, Button, Space, Typography } from 'antd'
 import { UserOutlined } from '@ant-design/icons'
-import { useAuthUiStore } from '@/stores/authUiStore'
+import { useQueryClient } from '@tanstack/react-query'
+import { useAuthStore } from '@/stores/authStore'
 
 export function AppHeader() {
   const location = useLocation()
   const navigate = useNavigate()
-  const isLoggedIn = useAuthUiStore((s) => s.isLoggedIn)
-  const setLoggedIn = useAuthUiStore((s) => s.setLoggedIn)
+  const queryClient = useQueryClient()
+  const user = useAuthStore((s) => s.user)
+  const isAuthenticated = useAuthStore((s) => Boolean(s.accessToken))
+  const logout = useAuthStore((s) => s.logout)
 
-  const handleDemoToggle = () => {
-    const next = !isLoggedIn
-    setLoggedIn(next)
-    if (!next) navigate('/')
-  }
-
-  const handleLogout = () => {
-    setLoggedIn(false)
+  const handleLogout = async () => {
+    logout()
+    await queryClient.invalidateQueries()
     if (location.pathname.startsWith('/profile')) {
       navigate('/')
     }
@@ -31,14 +29,11 @@ export function AppHeader() {
         <NavLink to="/" className="site-header__logo" end>
           NEO EDU
         </NavLink>
-        <Button
-          size="small"
-          className="site-header__demo-toggle"
-          onClick={handleDemoToggle}
-          type="text"
-        >
-          demo: {isLoggedIn ? 'logged in' : 'logged out'}
-        </Button>
+        {isAuthenticated && user && (
+          <Typography.Text type="secondary" className="site-header__demo-toggle" style={{ marginLeft: 12 }}>
+            {user.email}
+          </Typography.Text>
+        )}
       </div>
 
       <nav className="site-header__center" aria-label="Основное меню">
@@ -54,7 +49,7 @@ export function AppHeader() {
       </nav>
 
       <div className="site-header__right">
-        {isLoggedIn ? (
+        {isAuthenticated ? (
           <Space size={12}>
             <NavLink to="/profile" className={navClass}>
               <Space size={8}>
@@ -62,7 +57,7 @@ export function AppHeader() {
                 <Typography.Text className="site-header__profile-label">Профиль</Typography.Text>
               </Space>
             </NavLink>
-            <Button size="small" className="site-header__logout-btn" onClick={handleLogout}>
+            <Button size="small" className="site-header__logout-btn" onClick={() => void handleLogout()}>
               Выйти
             </Button>
           </Space>

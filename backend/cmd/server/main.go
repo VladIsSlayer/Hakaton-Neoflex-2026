@@ -41,8 +41,10 @@ func main() {
 	log.Println("connected to PostgreSQL")
 
 	authH := &handlers.Auth{Store: pg, JWTSecret: cfg.JWTSecret, TokenTTL: cfg.TokenTTL}
-	userH := &handlers.User{Store: pg}
+	userH := &handlers.User{Store: pg, Snapshot: pg}
 	courseH := &handlers.Course{Store: pg}
+	statsH := &handlers.Stats{Store: pg}
+	lessonTaskH := &handlers.LessonTask{Tasks: pg}
 	j0 := &judge0.Client{
 		BaseURL:       cfg.Judge0BaseURL,
 		AuthToken:     cfg.Judge0AuthToken,
@@ -84,11 +86,15 @@ func main() {
 	api := r.Group("/api")
 	api.POST("/auth/login", authH.Login)
 	api.GET("/courses", courseH.ListPublished)
+	api.GET("/lessons", courseH.ListCatalogLessons)
+	api.GET("/lessons/:lesson_id/task", lessonTaskH.TaskMeta)
 	api.GET("/courses/:id/lessons", courseH.LessonsForCourse)
+	api.GET("/stats/course-enrollments", statsH.CourseEnrollments)
 
 	protected := api.Group("")
 	protected.Use(auth.Middleware(cfg.JWTSecret))
 	protected.GET("/users/me/profile", userH.MeProfile)
+	protected.GET("/users/me/snapshot", userH.MeSnapshot)
 	protected.POST("/tasks/:task_id/check", taskH.Check)
 
 	mod := protected.Group("")

@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"neoflex-lms/internal/apierr"
 	"neoflex-lms/internal/store"
 
 	"github.com/gin-gonic/gin"
@@ -46,14 +47,14 @@ func (h *GitWebhook) HandleGitLab(c *gin.Context) {
 			tok = strings.TrimSpace(c.GetHeader("X-Webhook-Token"))
 		}
 		if tok != h.Secret {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid webhook token"})
+			apierr.Write(c, http.StatusUnauthorized, apierr.CodeUnauthorized, "invalid webhook token", nil)
 			return
 		}
 	}
 
 	var payload gitlabMergeRequestPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
+		apierr.Write(c, http.StatusBadRequest, apierr.CodeInvalidRequest, "invalid JSON body", nil)
 		return
 	}
 
@@ -79,14 +80,14 @@ func (h *GitWebhook) HandleGitLab(c *gin.Context) {
 	uid, tid, already, comps, pct, err := h.Store.ApplyGitIssueSuccess(c.Request.Context(), issueKey)
 	if err != nil {
 		if errors.Is(err, store.ErrGitBindingNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "git issue not mapped", "issue": issueKey})
+			apierr.Write(c, http.StatusNotFound, apierr.CodeNotFound, "git issue not mapped", gin.H{"issue": issueKey})
 			return
 		}
 		if errors.Is(err, store.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+			apierr.Write(c, http.StatusNotFound, apierr.CodeNotFound, "task not found", nil)
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		apierr.Write(c, http.StatusInternalServerError, apierr.CodeInternal, "internal error", nil)
 		return
 	}
 
