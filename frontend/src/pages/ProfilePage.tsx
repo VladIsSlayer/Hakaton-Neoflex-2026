@@ -17,11 +17,12 @@ import { UserOutlined } from '@ant-design/icons'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
+  fetchCourses,
   fetchProfileTaskStatuses,
   fetchRecentSolutions,
   fetchStudentSnapshot,
-  fetchUserCompetencyStats,
 } from '@/api/catalog'
+import { CompetencyMatrixCharts } from '@/components/CompetencyMatrixCharts'
 
 export function ProfilePage() {
   const [taskPage, setTaskPage] = useState(1)
@@ -40,12 +41,31 @@ export function ProfilePage() {
     queryKey: ['profile-recent-solutions', 'profile-v1'],
     queryFn: fetchRecentSolutions,
   })
-  const competencyStatsQuery = useQuery({
-    queryKey: ['profile-competency-stats', 'profile-v1'],
-    queryFn: fetchUserCompetencyStats,
+  const catalogQuery = useQuery({
+    queryKey: ['courses', 'profile-matrix-fallback'],
+    queryFn: fetchCourses,
   })
-
   const activeCourses = useMemo(() => studentQuery.data?.enrolledCourses ?? [], [studentQuery.data?.enrolledCourses])
+
+  const competencyMatrixRows = useMemo(() => {
+    const fromSnap = studentQuery.data?.matrixCourses ?? []
+    if (fromSnap.length > 0) return fromSnap
+    const published = (catalogQuery.data ?? []).filter((c) => c.is_published !== false)
+    const pubSix = published.slice(0, 6)
+    const progById = new Map(
+      (studentQuery.data?.enrolledCourses ?? []).map((e) => [e.courseId, e.progressPercent])
+    )
+    return pubSix.map((c) => ({
+      courseId: c.id,
+      courseTitle: c.title,
+      progressPercent: progById.get(c.id) ?? 0,
+    }))
+  }, [studentQuery.data?.matrixCourses, studentQuery.data?.enrolledCourses, catalogQuery.data])
+
+  const matrixUsesCatalogFallback = useMemo(() => {
+    const fromSnap = studentQuery.data?.matrixCourses ?? []
+    return fromSnap.length === 0 && competencyMatrixRows.length > 0
+  }, [studentQuery.data?.matrixCourses, competencyMatrixRows.length])
   const pagedActiveCourses = useMemo(
     () => activeCourses.slice((coursesPage - 1) * coursesPageSize, coursesPage * coursesPageSize),
     [activeCourses, coursesPage]
@@ -161,7 +181,7 @@ export function ProfilePage() {
         <Col xs={24} xl={10} style={{ display: 'flex' }}>
           <Card className="profile-equal-card" title="Активные курсы" style={{ width: '100%' }}>
             <Space direction="vertical" size={14} style={{ width: '100%' }}>
-              {pagedActiveCourses.map((course, index) => (
+              {pagedActiveCourses.map((course) => (
                 <div key={course.courseId}>
                   <Space style={{ justifyContent: 'space-between', width: '100%' }}>
                     <Typography.Text strong>{course.courseTitle}</Typography.Text>
@@ -169,7 +189,7 @@ export function ProfilePage() {
                       Открыть
                     </Link>
                   </Space>
-                  <Progress percent={Math.max(0, course.progressPercent - index * 2)} size="small" />
+                  <Progress percent={Math.max(0, Math.min(100, course.progressPercent))} size="small" />
                 </div>
               ))}
               {activeCourses.length === 0 && <Typography.Text type="secondary">Нет активных курсов.</Typography.Text>}
@@ -189,16 +209,18 @@ export function ProfilePage() {
       </Row>
 
       <Row gutter={[16, 16]}>
-        <Col xs={24} lg={12}>
+        <Col xs={24} lg={14}>
           <Card title="Матрица компетенций">
-            <div className="profile-radar-placeholder">
-              <Typography.Text type="secondary">
-                Средний уровень: {competencyStatsQuery.data?.averageLevel ?? 0} / 100
-              </Typography.Text>
-            </div>
+            <CompetencyMatrixCharts
+              matrixCourses={competencyMatrixRows}
+              catalogFallbackHint={matrixUsesCatalogFallback}
+              competencyCount={(studentQuery.data?.competencies ?? []).length}
+              averageLevel={studentQuery.data?.averageCompetencyLevel ?? 0}
+              totalInCatalog={studentQuery.data?.totalCompetenciesInCatalog ?? 0}
+            />
           </Card>
         </Col>
-        <Col xs={24} lg={12}>
+        <Col xs={24} lg={10}>
           <Card title="Последние решения">
             {recentSolutionsQuery.data && recentSolutionsQuery.data.length > 0 ? (
               <ul className="sketch-list">

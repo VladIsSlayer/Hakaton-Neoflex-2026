@@ -63,6 +63,19 @@ export type StudentCourseProgress = {
   lessonsCompleted: number
 }
 
+export type StudentCompetency = {
+  id: string
+  name: string
+  level: number
+}
+
+/** До 6 курсов для одной радар-матрицы: сначала по недавним сабмитам, затем дописка из записей. */
+export type MatrixCourseAxis = {
+  courseId: string
+  courseTitle: string
+  progressPercent: number
+}
+
 export type StudentSnapshot = {
   user: {
     id: string
@@ -72,6 +85,11 @@ export type StudentSnapshot = {
     tg_chat_id?: string | null
   } | null
   enrolledCourses: StudentCourseProgress[]
+  /** Из БД: user_competencies + справочник имён. */
+  competencies: StudentCompetency[]
+  averageCompetencyLevel: number
+  totalCompetenciesInCatalog: number
+  matrixCourses: MatrixCourseAxis[]
 }
 
 export type LessonProgressItem = {
@@ -162,6 +180,7 @@ type MeSnapshotDTO = {
   }>
   average_competency_level: number
   total_competencies_catalog: number
+  competencies?: Array<{ id: string; name: string; level: number }>
 }
 
 type EnrollmentCountRow = {
@@ -225,11 +244,65 @@ export async function enrollInCourse(courseId: string): Promise<{ course_id: str
   })
 }
 
+const MATRIX_MAX_COURSES = 6
+
+function pickMatrixCoursesFromSnap(snap: MeSnapshotDTO): MatrixCourseAxis[] {
+  const enrolled = snap.enrolled_courses ?? []
+  const submissions = snap.submissions ?? []
+  const enrollmentByCourse = new Map(
+    enrolled.map((e) => [
+      e.course_id,
+      {
+        title: e.course_title,
+        progress: Math.max(0, Math.min(100, Math.round(e.progress_percent ?? 0))),
+      },
+    ])
+  )
+  const orderedIds: string[] = []
+  const seen = new Set<string>()
+  /** Сначала записи на курсы — иначе при пустых submissions матрица остаётся пустой. */
+  for (const e of enrolled) {
+    if (orderedIds.length >= MATRIX_MAX_COURSES) break
+    const cid = e.course_id?.trim()
+    if (!cid || seen.has(cid)) continue
+    seen.add(cid)
+    orderedIds.push(cid)
+  }
+  for (const s of submissions) {
+    if (orderedIds.length >= MATRIX_MAX_COURSES) break
+    const cid = s.course_id?.trim()
+    if (!cid || seen.has(cid)) continue
+    seen.add(cid)
+    orderedIds.push(cid)
+  }
+  return orderedIds.map((courseId) => {
+    const en = enrollmentByCourse.get(courseId)
+    const sub = submissions.find((x) => x.course_id === courseId)
+    return {
+      courseId,
+      courseTitle: (en?.title ?? sub?.course_title ?? 'Курс').trim() || 'Курс',
+      progressPercent: en?.progress ?? 0,
+    }
+  })
+}
+
 export async function fetchStudentSnapshot(): Promise<StudentSnapshot> {
   const snap = await fetchMeSnapshot()
   if (!snap) {
-    return { user: null, enrolledCourses: [] }
+    return {
+      user: null,
+      enrolledCourses: [],
+      competencies: [],
+      averageCompetencyLevel: 0,
+      totalCompetenciesInCatalog: 0,
+      matrixCourses: [],
+    }
   }
+  const comps = (snap.competencies ?? []).map((c) => ({
+    id: c.id,
+    name: c.name || 'Компетенция',
+    level: Math.max(0, Math.min(100, Math.round(Number(c.level) || 0))),
+  }))
   return {
     user: {
       id: snap.user.id,
@@ -247,6 +320,10 @@ export async function fetchStudentSnapshot(): Promise<StudentSnapshot> {
       lessonsTotal: e.lessons_total ?? 0,
       lessonsCompleted: e.lessons_completed ?? 0,
     })),
+    competencies: comps,
+    averageCompetencyLevel: Math.max(0, Math.min(100, Math.round(snap.average_competency_level ?? 0))),
+    totalCompetenciesInCatalog: Math.max(0, Math.round(snap.total_competencies_catalog ?? 0)),
+    matrixCourses: pickMatrixCoursesFromSnap(snap),
   }
 }
 

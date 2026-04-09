@@ -815,6 +815,17 @@ code {
   margin-top: 6px;
 }
 
+.competency-radar-wrap {
+  width: 100%;
+  min-height: 300px;
+}
+
+.competency-radar-wrap--single {
+  min-height: 380px;
+  max-width: 640px;
+  margin-inline: auto;
+}
+
 .lesson-inline-video {
   width: 100%;
   border-radius: 12px;
