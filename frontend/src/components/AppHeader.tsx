@@ -1,13 +1,26 @@
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { Avatar, Button, Space, Typography } from 'antd'
 import { UserOutlined } from '@ant-design/icons'
 import { useAuthUiStore } from '@/stores/authUiStore'
 
 export function AppHeader() {
+  const location = useLocation()
   const navigate = useNavigate()
   const isLoggedIn = useAuthUiStore((s) => s.isLoggedIn)
   const setLoggedIn = useAuthUiStore((s) => s.setLoggedIn)
-  const toggleLoggedIn = useAuthUiStore((s) => s.toggleLoggedIn)
+
+  const handleDemoToggle = () => {
+    const next = !isLoggedIn
+    setLoggedIn(next)
+    if (!next) navigate('/')
+  }
+
+  const handleLogout = () => {
+    setLoggedIn(false)
+    if (location.pathname.startsWith('/profile')) {
+      navigate('/')
+    }
+  }
 
   const navClass = ({ isActive }: { isActive: boolean }) =>
     'site-header__nav-link' + (isActive ? ' site-header__nav-link--active' : '')
@@ -21,7 +34,7 @@ export function AppHeader() {
         <Button
           size="small"
           className="site-header__demo-toggle"
-          onClick={toggleLoggedIn}
+          onClick={handleDemoToggle}
           type="text"
         >
           demo: {isLoggedIn ? 'logged in' : 'logged out'}
@@ -49,7 +62,7 @@ export function AppHeader() {
                 <Typography.Text className="site-header__profile-label">Профиль</Typography.Text>
               </Space>
             </NavLink>
-            <Button size="small" className="site-header__logout-btn" onClick={() => setLoggedIn(false)}>
+            <Button size="small" className="site-header__logout-btn" onClick={handleLogout}>
               Выйти
             </Button>
           </Space>

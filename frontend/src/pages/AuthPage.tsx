@@ -1,11 +1,14 @@
 import { Button, Card, Col, Form, Input, Row, Space, Tabs, Typography } from 'antd'
 import { useMemo } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useAuthUiStore } from '@/stores/authUiStore'
 
 export function AuthPage() {
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const setLoggedIn = useAuthUiStore((s) => s.setLoggedIn)
   const isRegisterMode = useMemo(() => searchParams.get('mode') === 'register', [searchParams])
-  const defaultTab = isRegisterMode ? 'register' : 'login'
+  const activeTab = isRegisterMode ? 'register' : 'login'
 
   return (
     <Row justify="center">
@@ -19,7 +22,8 @@ export function AuthPage() {
               Временная форма для визуальной интеграции. API-логика будет подключена на следующем шаге.
             </Typography.Text>
             <Tabs
-              defaultActiveKey={defaultTab}
+              activeKey={activeTab}
+              onChange={(key) => navigate(`/auth?mode=${key === 'register' ? 'register' : 'login'}`)}
               items={[
                 {
                   key: 'login',
@@ -33,7 +37,14 @@ export function AuthPage() {
                         <Input.Password placeholder="••••••••" />
                       </Form.Item>
                       <Space>
-                        <Button type="primary" className="neo-gradient-button">
+                        <Button
+                          type="primary"
+                          className="neo-gradient-button"
+                          onClick={() => {
+                            setLoggedIn(true)
+                            navigate('/profile')
+                          }}
+                        >
                           Войти
                         </Button>
                         <Button className="neo-purple-btn">Войти через Telegram</Button>

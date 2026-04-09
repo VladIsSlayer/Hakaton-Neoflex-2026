@@ -1,8 +1,10 @@
 import { Avatar, Button, Card, Col, Input, Pagination, Progress, Row, Space, Tag, Typography } from 'antd'
 import { SearchOutlined } from '@ant-design/icons'
 import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { fetchCourses } from '@/api/catalog'
+import { fetchCourseAudienceStats, fetchCourses, fetchStudentSnapshot } from '@/api/catalog'
+import { useAuthUiStore } from '@/stores/authUiStore'
 
 const MOCK_COURSES = [
   { id: '1', title: 'Python Core', level: 'Junior', progress: 72, skill: 'PY', enrollments: 421, sticker: 'TOP' },
@@ -19,6 +21,8 @@ const MOCK_COURSES = [
 ] as const
 
 export function DashboardPage() {
+  const navigate = useNavigate()
+  const isLoggedIn = useAuthUiStore((s) => s.isLoggedIn)
   const [page, setPage] = useState(1)
   const [activeFilter, setActiveFilter] = useState('Все отрасли')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -28,19 +32,34 @@ export function DashboardPage() {
     queryKey: ['courses'],
     queryFn: fetchCourses,
   })
+  const studentQuery = useQuery({
+    queryKey: ['student-snapshot', 'dashboard-v1'],
+    queryFn: fetchStudentSnapshot,
+    enabled: isLoggedIn,
+  })
+  const audienceQuery = useQuery({
+    queryKey: ['course-audience-stats'],
+    queryFn: fetchCourseAudienceStats,
+  })
 
   const coursesSource = useMemo(() => {
     if (!coursesQuery.data || coursesQuery.data.length === 0) return MOCK_COURSES
+    const audienceMap = new Map(
+      (audienceQuery.data ?? []).map((stat) => [stat.courseId, stat.enrollments])
+    )
+    const enrollmentMap = new Map(
+      (studentQuery.data?.enrolledCourses ?? []).map((course) => [course.courseId, course])
+    )
     return coursesQuery.data.map((course, index) => ({
       id: course.id,
       title: course.title,
       level: ['Junior', 'Middle', 'Senior'][index % 3],
-      progress: 20 + ((index * 11) % 70),
+      progress: isLoggedIn ? (enrollmentMap.get(course.id)?.progressPercent ?? 0) : 0,
       skill: (course.title.match(/[A-Za-zА-Яа-я]/)?.[0] ?? 'C').toUpperCase(),
-      enrollments: 80 + index * 23,
+      enrollments: audienceMap.get(course.id) ?? 0,
       sticker: index === 0 ? 'TOP' : index === 1 ? 'HIT' : '',
     }))
-  }, [coursesQuery.data])
+  }, [coursesQuery.data, audienceQuery.data, studentQuery.data?.enrolledCourses, isLoggedIn])
 
   const filteredCourses = useMemo(
     () =>
@@ -97,7 +116,7 @@ export function DashboardPage() {
       <Row gutter={[16, 16]}>
         {pageCourses.map((course) => (
           <Col key={course.id} xs={24} md={12} lg={8}>
-            <Card hoverable className="neo-card">
+            <Card hoverable className="neo-card" onClick={() => navigate(`/courses/${course.id}`)}>
               <Space direction="vertical" size={10} style={{ width: '100%' }}>
                 <Space align="center" style={{ justifyContent: 'space-between', width: '100%' }}>
                   <Space>
@@ -112,7 +131,7 @@ export function DashboardPage() {
                   </Space>
                 </Space>
                 <Typography.Text type="secondary">Вступили: {course.enrollments}</Typography.Text>
-                <Progress percent={course.progress} size="small" />
+                {isLoggedIn && <Progress percent={course.progress} size="small" />}
               </Space>
             </Card>
           </Col>

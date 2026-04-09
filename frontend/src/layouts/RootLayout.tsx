@@ -1,5 +1,5 @@
 import { Outlet } from 'react-router-dom'
-import { Button, Layout, Typography } from 'antd'
+import { Layout, Typography } from 'antd'
 import { AppHeader } from '@/components/AppHeader'
 
 const { Header, Content, Footer } = Layout
@@ -17,19 +17,14 @@ export function RootLayout() {
       </Content>
       <Footer className="site-layout__footer">
         <div className="site-footer-grid">
-          <div>
+          <div className="site-footer-col site-footer-col--left">
             <Typography.Text strong>Служба поддержки</Typography.Text>
             <br />
             <Typography.Text type="secondary">+7 (495) 984 25 13</Typography.Text>
             <br />
             <Typography.Text type="secondary">info@neoflex.ru</Typography.Text>
           </div>
-          <div>
-            <Button shape="round" className="neo-contact-btn">
-              Связаться с нами
-            </Button>
-          </div>
-          <div>
+          <div className="site-footer-col site-footer-col--right">
             <Typography.Text strong>NEO EDU</Typography.Text>
             <br />
             <Typography.Text type="secondary">Корпоративная LMS для ИТ-обучения</Typography.Text>

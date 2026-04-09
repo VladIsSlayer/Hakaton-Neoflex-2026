@@ -1,7 +1,7 @@
 import { Button, Card, Col, Progress, Row, Space, Typography } from 'antd'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { fetchCourses, fetchLessons } from '@/api/catalog'
+import { fetchCourses, fetchLessons, fetchStudentSnapshot } from '@/api/catalog'
 
 const SERVICE_GROUPS = [
   {
@@ -26,22 +26,32 @@ function getTrailingNumber(value: string): number | null {
 export function LandingPage() {
   const navigate = useNavigate()
   const coursesQuery = useQuery({
-    queryKey: ['courses'],
+    queryKey: ['courses', 'landing-v2'],
     queryFn: fetchCourses,
+    refetchOnMount: 'always',
   })
   const lessonsQuery = useQuery({
-    queryKey: ['lessons'],
+    queryKey: ['lessons', 'landing-v2'],
     queryFn: fetchLessons,
+    refetchOnMount: 'always',
+  })
+  const studentQuery = useQuery({
+    queryKey: ['student-snapshot', 'landing-v1'],
+    queryFn: fetchStudentSnapshot,
+    refetchOnMount: 'always',
   })
 
-  const recentCourse = coursesQuery.data && coursesQuery.data.length > 0
+  const recentEnrolled = studentQuery.data?.enrolledCourses?.[0]
+  const fallbackRecentCourse = coursesQuery.data && coursesQuery.data.length > 0
     ? coursesQuery.data[coursesQuery.data.length - 1]
     : null
+  const recentCourse = recentEnrolled
+    ? (coursesQuery.data?.find((course) => course.id === recentEnrolled.courseId) ??
+      { id: recentEnrolled.courseId, title: recentEnrolled.courseTitle, description: null })
+    : fallbackRecentCourse
   const recentCourseLessons = lessonsQuery.data?.filter((lesson) => lesson.course_id === recentCourse?.id) ?? []
-  const completedModules = recentCourseLessons.length > 0 ? Math.ceil(recentCourseLessons.length * 0.67) : 0
-  const progressPercent = recentCourseLessons.length > 0
-    ? Math.min(100, Math.round((completedModules / recentCourseLessons.length) * 100))
-    : 0
+  const completedModules = recentEnrolled?.lessonsCompleted ?? 0
+  const progressPercent = recentEnrolled?.progressPercent ?? 0
 
   const sortedCourses = [...(coursesQuery.data ?? [])].sort((a, b) => {
     const aNum = getTrailingNumber(a.title)
@@ -77,7 +87,10 @@ export function LandingPage() {
           {recentCourse?.title ?? 'Последний курс'}
         </Typography.Title>
         <Typography.Paragraph type="secondary" style={{ marginTop: 0, marginBottom: 8 }}>
-          M&G: {completedModules}/{recentCourseLessons.length} модулей
+          {recentCourse?.description ?? 'Описание курса пока не заполнено в БД.'}
+        </Typography.Paragraph>
+        <Typography.Paragraph type="secondary" style={{ marginTop: 0, marginBottom: 8 }}>
+          M&G: {completedModules}/{recentEnrolled?.lessonsTotal ?? recentCourseLessons.length} модулей
         </Typography.Paragraph>
         <Progress percent={progressPercent} showInfo={false} strokeColor={{ from: '#ff7a00', to: '#ff2f92' }} />
       </Card>
@@ -105,7 +118,8 @@ export function LandingPage() {
                     {item}
                   </Typography.Text>
                   <Typography.Text className="neo-service-tile__desc">
-                    Курс с практикой и кейсами. Научитесь применять навыки в реальных задачах команды.
+                    {sortedCourses.find((c) => c.title === item)?.description ??
+                      'Описание курса пока не заполнено в БД.'}
                   </Typography.Text>
                 </Card>
               </Col>

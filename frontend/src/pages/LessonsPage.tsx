@@ -3,48 +3,64 @@ import { Avatar, Button, Card, Input, List, Pagination, Progress, Space, Tag, Ty
 import { SearchOutlined } from '@ant-design/icons'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { fetchCourses, fetchLessons } from '@/api/catalog'
-
-const MOCK_LESSONS = [
-  { id: 'l1', courseId: 'sample-course-id', title: 'SQL: JOIN и агрегации', course: 'SQL Practice', status: 'в процессе', badge: 'SQL' },
-  { id: 'l2', courseId: 'sample-course-id', title: 'Python: списки и словари', course: 'Python Core', status: 'не начат', badge: 'PY' },
-  { id: 'l3', courseId: 'sample-course-id', title: 'Git: rebase и merge', course: 'Git & Code Review', status: 'в процессе', badge: 'GIT' },
-  { id: 'l4', courseId: 'sample-course-id', title: 'Go: goroutine', course: 'Go Basics', status: 'не начат', badge: 'GO' },
-  { id: 'l5', courseId: 'sample-course-id', title: 'Docker: multi-stage build', course: 'Docker Practice', status: 'в процессе', badge: 'DOC' },
-  { id: 'l6', courseId: 'sample-course-id', title: 'SQL: оконные функции', course: 'Product SQL Cases', status: 'не начат', badge: 'SQL' },
-  { id: 'l7', courseId: 'sample-course-id', title: 'CI: workflow jobs', course: 'CI/CD Pipelines', status: 'не начат', badge: 'CI' },
-] as const
+import { fetchCourseAudienceStats, fetchCourses, fetchLessonProgressForStudent, fetchLessons } from '@/api/catalog'
+import { useAuthUiStore } from '@/stores/authUiStore'
 
 /** Агрегатор «продолжить обучение»: последний урок, список в процессе */
 export function LessonsPage() {
+  const isLoggedIn = useAuthUiStore((s) => s.isLoggedIn)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const pageSize = 5
-  const coursesQuery = useQuery({
-    queryKey: ['courses'],
-    queryFn: fetchCourses,
+  const lessonProgressQuery = useQuery({
+    queryKey: ['lesson-progress', 'lessons-v2'],
+    queryFn: fetchLessonProgressForStudent,
+    enabled: isLoggedIn,
   })
   const lessonsQuery = useQuery({
     queryKey: ['lessons'],
     queryFn: fetchLessons,
   })
+  const coursesQuery = useQuery({
+    queryKey: ['courses'],
+    queryFn: fetchCourses,
+  })
+  const audienceQuery = useQuery({
+    queryKey: ['course-audience-stats'],
+    queryFn: fetchCourseAudienceStats,
+  })
 
   const lessonsSource = useMemo(() => {
-    if (!lessonsQuery.data || lessonsQuery.data.length === 0) return MOCK_LESSONS
+    if (lessonProgressQuery.data && lessonProgressQuery.data.length > 0) {
+      return lessonProgressQuery.data.map((item) => ({
+        id: item.lessonId,
+        courseId: item.courseId,
+        title: item.lessonTitle,
+        course: item.courseTitle,
+        status: item.status,
+        badge: (item.lessonTitle.match(/[A-Za-zА-Яа-я]/)?.[0] ?? 'L').toUpperCase(),
+        progress: item.progressPercent,
+        enrollments: 0,
+      }))
+    }
+    const audienceMap = new Map((audienceQuery.data ?? []).map((stat) => [stat.courseId, stat.enrollments]))
     const courseMap = new Map((coursesQuery.data ?? []).map((course) => [course.id, course.title]))
-    return lessonsQuery.data.map((lesson, index) => ({
+    return (lessonsQuery.data ?? []).map((lesson) => ({
       id: lesson.id,
       courseId: lesson.course_id,
       title: lesson.title,
-      course: courseMap.get(lesson.course_id) ?? 'Курс',
-      status: index % 2 === 0 ? ('в процессе' as const) : ('не начат' as const),
+      course: courseMap.get(lesson.course_id) ?? lesson.course_id,
+      status: 'не начат' as const,
       badge: (lesson.title.match(/[A-Za-zА-Яа-я]/)?.[0] ?? 'L').toUpperCase(),
+      progress: 0,
+      enrollments: audienceMap.get(lesson.course_id) ?? 0,
     }))
-  }, [coursesQuery.data, lessonsQuery.data])
+  }, [lessonProgressQuery.data, audienceQuery.data, lessonsQuery.data, coursesQuery.data])
 
-  const recentLesson = lessonsSource.length > 0 ? lessonsSource[lessonsSource.length - 1] : undefined
+  const recentLesson = lessonsSource.find((lesson) => lesson.progress > 0) ?? lessonsSource[0]
   const recentCourseTitle = recentLesson?.course ?? 'Курс'
   const recentBadge = (recentCourseTitle.match(/[A-Za-zА-Яа-я]/)?.[0] ?? 'L').toUpperCase()
+  const lessonBodyMap = new Map((lessonsQuery.data ?? []).map((lesson) => [lesson.id, lesson.content_body]))
 
   const filteredLessons = useMemo(
     () =>
@@ -61,35 +77,38 @@ export function LessonsPage() {
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Card className="neo-banner neo-banner--continue">
-        <Space style={{ justifyContent: 'space-between', width: '100%' }} align="center">
-          <Space>
-            <Avatar size={24} className="neo-course-avatar">
-              {recentBadge}
-            </Avatar>
-            <div>
-              <Typography.Title level={5} style={{ margin: 0 }}>
-                Продолжить с места остановки
-              </Typography.Title>
-              <Typography.Text type="secondary">
-                {recentCourseTitle} · {recentLesson?.title ?? 'Урок'}
-              </Typography.Text>
-            </div>
+      {isLoggedIn && (
+        <Card className="neo-banner neo-banner--continue">
+          <Space style={{ justifyContent: 'space-between', width: '100%' }} align="center">
+            <Space>
+              <Avatar size={24} className="neo-course-avatar">
+                {recentBadge}
+              </Avatar>
+              <div>
+                <Typography.Title level={5} style={{ margin: 0 }}>
+                  Продолжить с места остановки
+                </Typography.Title>
+                <Typography.Text type="secondary">
+                  {recentCourseTitle} · {recentLesson?.title ?? 'Урок'}
+                </Typography.Text>
+              </div>
+            </Space>
+            <Button type="primary" className="neo-gradient-button neo-gradient-button--compact">
+              <Link to={recentLesson ? `/courses/${recentLesson.courseId}/lessons/${recentLesson.id}` : '/lessons'}>
+                Открыть урок
+              </Link>
+            </Button>
           </Space>
-          <Button type="primary" className="neo-gradient-button neo-gradient-button--compact">
-            <Link to={recentLesson ? `/courses/${recentLesson.courseId}/lessons/${recentLesson.id}` : '/lessons'}>
-              Открыть урок
-            </Link>
-          </Button>
-        </Space>
-      </Card>
+        </Card>
+      )}
 
       <Card className="neo-banner neo-banner--promo">
         <Typography.Title className="neo-promo-title" level={2} style={{ marginTop: 0, color: '#ececed' }}>
           {recentCourseTitle}
         </Typography.Title>
         <Typography.Paragraph className="neo-promo-subtitle" style={{ color: '#ececed', marginBottom: 0 }}>
-          {recentLesson?.title ?? 'Материалы курса и практические задания из вашей программы обучения.'}
+          {recentLesson ? (lessonBodyMap.get(recentLesson.id) ?? recentLesson.title) :
+            'Материалы курса и практические задания из вашей программы обучения.'}
         </Typography.Paragraph>
         <div className="neo-banner-promo__cta">
           <Button type="primary" className="neo-gradient-button">
@@ -116,7 +135,9 @@ export function LessonsPage() {
           <List.Item
             actions={[
               <Button key={`open-${item.id}`} type="primary" size="small" className="neo-gradient-button">
-                <Link to={item.courseId ? `/courses/${item.courseId}/lessons/${item.id}` : '/lessons'}>Открыть</Link>
+                <Link to={isLoggedIn && item.courseId ? `/courses/${item.courseId}/lessons/${item.id}` : '/auth?mode=register'}>
+                  Открыть
+                </Link>
               </Button>,
             ]}
           >
@@ -130,7 +151,9 @@ export function LessonsPage() {
                       </Avatar>
                       <Typography.Text>{item.title}</Typography.Text>
                     </Space>
-                    <Tag color={item.status === 'в процессе' ? '#1e084d' : '#6b1cc8'}>{item.status}</Tag>
+                    {isLoggedIn && (
+                      <Tag color={item.status === 'в процессе' ? '#1e084d' : '#6b1cc8'}>{item.status}</Tag>
+                    )}
                   </Space>
                 </div>
               }
@@ -138,16 +161,16 @@ export function LessonsPage() {
                 <div style={{ width: '100%' }}>
                   <Space style={{ justifyContent: 'space-between', width: '100%' }}>
                     <Typography.Text type="secondary">{item.course}</Typography.Text>
-                    <Typography.Text type="secondary">{
-                      item.status === 'в процессе' ? '63%' : '0%'
-                    }</Typography.Text>
+                    {isLoggedIn && <Typography.Text type="secondary">{`${item.progress}%`}</Typography.Text>}
                   </Space>
-                  <Progress
-                    percent={item.status === 'в процессе' ? 63 : 0}
-                    showInfo={false}
-                    size="small"
-                    style={{ marginTop: 6 }}
-                  />
+                  {isLoggedIn && (
+                    <Progress
+                      percent={item.progress}
+                      showInfo={false}
+                      size="small"
+                      style={{ marginTop: 6 }}
+                    />
+                  )}
                 </div>
               }
             />
@@ -164,7 +187,7 @@ export function LessonsPage() {
         showSizeChanger={false}
       />
 
-      {lessonsQuery.isError && (
+      {(lessonsQuery.isError || lessonProgressQuery.isError) && (
         <Typography.Text type="secondary">
           Не удалось загрузить лекции из БД, показаны локальные данные.
         </Typography.Text>

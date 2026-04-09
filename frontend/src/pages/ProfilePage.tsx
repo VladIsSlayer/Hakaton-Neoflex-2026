@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   Col,
+  Pagination,
   Progress,
   Row,
   Space,
@@ -15,57 +16,53 @@ import {
 import { UserOutlined } from '@ant-design/icons'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { fetchCourses, fetchLessons } from '@/api/catalog'
-
-const COURSE_REVIEW_ROWS = [
-  {
-    course: 'NeoFlex Bootcamp',
-    task: 'Практика: SQL-выборка',
-    status: 'Ожидает ответа куратора',
-    score: '—',
-  },
-  {
-    course: 'NeoFlex Bootcamp',
-    task: 'Алгоритмы: сортировка',
-    status: 'Принято',
-    score: '10',
-  },
-  {
-    course: 'DevOps трек',
-    task: 'PR в репозитории',
-    status: 'Проверено',
-    score: '8',
-  },
-  {
-    course: 'DevOps трек',
-    task: 'Конфиг CI',
-    status: 'Отклонено',
-    score: '0',
-  },
-] as const
+import {
+  fetchProfileTaskStatuses,
+  fetchRecentSolutions,
+  fetchStudentSnapshot,
+  fetchUserCompetencyStats,
+} from '@/api/catalog'
 
 export function ProfilePage() {
-  const [telegramConnected, setTelegramConnected] = useState(false)
-  const coursesQuery = useQuery({
-    queryKey: ['courses'],
-    queryFn: fetchCourses,
+  const [taskPage, setTaskPage] = useState(1)
+  const [coursesPage, setCoursesPage] = useState(1)
+  const taskPageSize = 5
+  const coursesPageSize = 4
+  const studentQuery = useQuery({
+    queryKey: ['student-snapshot', 'profile-v1'],
+    queryFn: fetchStudentSnapshot,
   })
-  const lessonsQuery = useQuery({
-    queryKey: ['lessons'],
-    queryFn: fetchLessons,
+  const taskStatusesQuery = useQuery({
+    queryKey: ['profile-task-statuses', 'profile-v1'],
+    queryFn: fetchProfileTaskStatuses,
+  })
+  const recentSolutionsQuery = useQuery({
+    queryKey: ['profile-recent-solutions', 'profile-v1'],
+    queryFn: fetchRecentSolutions,
+  })
+  const competencyStatsQuery = useQuery({
+    queryKey: ['profile-competency-stats', 'profile-v1'],
+    queryFn: fetchUserCompetencyStats,
   })
 
-  const activeCourses = useMemo(
-    () => (coursesQuery.data ?? []).slice(0, 3),
-    [coursesQuery.data]
+  const activeCourses = useMemo(() => studentQuery.data?.enrolledCourses ?? [], [studentQuery.data?.enrolledCourses])
+  const pagedActiveCourses = useMemo(
+    () => activeCourses.slice((coursesPage - 1) * coursesPageSize, coursesPage * coursesPageSize),
+    [activeCourses, coursesPage]
+  )
+  const pagedTaskStatuses = useMemo(
+    () => (taskStatusesQuery.data ?? []).slice((taskPage - 1) * taskPageSize, taskPage * taskPageSize),
+    [taskStatusesQuery.data, taskPage]
   )
   const stats = useMemo(() => {
     const activeCount = activeCourses.length
-    const inReview = Math.max(0, Math.floor((lessonsQuery.data?.length ?? 0) / 4))
-    const avgProgress = activeCount > 0 ? 67 : 0
-    const weekly = lessonsQuery.data?.length ?? 0
+    const inReview = taskStatusesQuery.data?.filter((row) => row.status !== 'Принято' && row.status !== 'Отклонено').length ?? 0
+    const avgProgress = activeCount > 0
+      ? Math.round(activeCourses.reduce((sum, course) => sum + course.progressPercent, 0) / activeCount)
+      : 0
+    const weekly = recentSolutionsQuery.data?.length ?? 0
     return { activeCount, inReview, avgProgress, weekly }
-  }, [activeCourses.length, lessonsQuery.data])
+  }, [activeCourses, taskStatusesQuery.data, recentSolutionsQuery.data])
   const columns = [
     { title: 'Курс', dataIndex: 'course', key: 'course' },
     { title: 'Задание', dataIndex: 'task', key: 'task' },
@@ -82,6 +79,9 @@ export function ProfilePage() {
     },
     { title: 'Итоговый балл', dataIndex: 'score', key: 'score' },
   ]
+  const userRole = studentQuery.data?.user?.role ?? 'student'
+  const roleLabel = userRole === 'moderator' ? 'Модератор' : 'Студент'
+  const tgConnected = Boolean(studentQuery.data?.user?.tg_chat_id)
 
   return (
     <Space className="profile-page" direction="vertical" size={16} style={{ width: '100%' }}>
@@ -92,17 +92,19 @@ export function ProfilePage() {
           </Col>
           <Col flex="auto">
             <Typography.Title level={4} style={{ margin: 0 }}>
-              Иван Петров
+              {studentQuery.data?.user?.full_name ?? 'Иван Петров'}
             </Typography.Title>
-            <Typography.Text type="secondary">ivan.petrov · student@neoflex.demo</Typography.Text>
+            <Typography.Text type="secondary">
+              {studentQuery.data?.user?.email ?? 'student@neoflex.demo'}
+            </Typography.Text>
             <br />
             <Tag color="#1e084d" style={{ marginTop: 8 }}>
-              Студент
+              {roleLabel}
             </Tag>
           </Col>
           <Col>
-            {!telegramConnected ? (
-              <Button className="neo-purple-btn" onClick={() => setTelegramConnected(true)}>
+            {!tgConnected ? (
+              <Button className="neo-purple-btn">
                 Подключить Telegram
               </Button>
             ) : (
@@ -136,33 +138,51 @@ export function ProfilePage() {
       </Row>
 
       <Row gutter={[16, 16]}>
-        <Col xs={24} xl={14}>
-          <Typography.Title level={5} style={{ marginBottom: 8 }}>
-            Статусы заданий (куратор / итог)
-          </Typography.Title>
-          <Table
-            rowKey={(row) => `${row.course}-${row.task}`}
-            columns={columns}
-            dataSource={COURSE_REVIEW_ROWS.map((row) => ({ ...row }))}
-            pagination={false}
-            size="small"
-          />
+        <Col xs={24} xl={14} style={{ display: 'flex' }}>
+          <Card className="profile-equal-card" title="Статусы заданий (куратор / итог)" style={{ width: '100%' }}>
+            <Table
+              rowKey={(row) => `${row.course}-${row.task}`}
+              columns={columns}
+              dataSource={pagedTaskStatuses.map((row) => ({ ...row }))}
+              pagination={false}
+              size="small"
+            />
+            <Pagination
+              style={{ marginTop: 12 }}
+              align="center"
+              current={taskPage}
+              pageSize={taskPageSize}
+              total={(taskStatusesQuery.data ?? []).length}
+              onChange={setTaskPage}
+              showSizeChanger={false}
+            />
+          </Card>
         </Col>
-        <Col xs={24} xl={10}>
-          <Card title="Активные курсы">
+        <Col xs={24} xl={10} style={{ display: 'flex' }}>
+          <Card className="profile-equal-card" title="Активные курсы" style={{ width: '100%' }}>
             <Space direction="vertical" size={14} style={{ width: '100%' }}>
-              {activeCourses.map((course, index) => (
-                <div key={course.id}>
+              {pagedActiveCourses.map((course, index) => (
+                <div key={course.courseId}>
                   <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                    <Typography.Text strong>{course.title}</Typography.Text>
-                    <Link className="neo-link" to={`/courses/${course.id}`}>
+                    <Typography.Text strong>{course.courseTitle}</Typography.Text>
+                    <Link className="neo-link" to={`/courses/${course.courseId}`}>
                       Открыть
                     </Link>
                   </Space>
-                  <Progress percent={Math.max(12, 72 - index * 22)} size="small" />
+                  <Progress percent={Math.max(0, course.progressPercent - index * 2)} size="small" />
                 </div>
               ))}
               {activeCourses.length === 0 && <Typography.Text type="secondary">Нет активных курсов.</Typography.Text>}
+              {activeCourses.length > 0 && (
+                <Pagination
+                  align="center"
+                  current={coursesPage}
+                  pageSize={coursesPageSize}
+                  total={activeCourses.length}
+                  onChange={setCoursesPage}
+                  showSizeChanger={false}
+                />
+              )}
             </Space>
           </Card>
         </Col>
@@ -172,17 +192,25 @@ export function ProfilePage() {
         <Col xs={24} lg={12}>
           <Card title="Матрица компетенций">
             <div className="profile-radar-placeholder">
-              <Typography.Text type="secondary">Radar chart (скоро)</Typography.Text>
+              <Typography.Text type="secondary">
+                Средний уровень: {competencyStatsQuery.data?.averageLevel ?? 0} / 100
+              </Typography.Text>
             </div>
           </Card>
         </Col>
         <Col xs={24} lg={12}>
           <Card title="Последние решения">
-            <ul className="sketch-list">
-              <li>Задача #12 · Python · success · 2 ч назад</li>
-              <li>Задача #08 · SQL · failed · вчера</li>
-              <li>Задача #03 · Python · success · 3 дня назад</li>
-            </ul>
+            {recentSolutionsQuery.data && recentSolutionsQuery.data.length > 0 ? (
+              <ul className="sketch-list">
+                {recentSolutionsQuery.data.map((item) => (
+                  <li key={item.id}>
+                    {item.title} · {item.courseTitle} · {item.status}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <Typography.Text type="secondary">Нет решений в БД.</Typography.Text>
+            )}
           </Card>
         </Col>
       </Row>
