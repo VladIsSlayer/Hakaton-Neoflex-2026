@@ -2,21 +2,13 @@ import { Link, useParams } from 'react-router-dom'
 import { Avatar, Button, Card, Col, Input, Progress, Radio, Row, Select, Space, Table, Tag, Typography, message } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { fetchCourseById, fetchLessonsByCourse, fetchLessonProgressForStudent } from '@/api/catalog'
+import { fetchCourseById, fetchCourseContentBlocks, fetchLessonsByCourse, fetchLessonProgressForStudent, type LessonContentBlock } from '@/api/catalog'
 
 export function CourseViewPage() {
   const { courseId } = useParams()
-  const [quizValue, setQuizValue] = useState<string>('a')
+  const [quizAnswers, setQuizAnswers] = useState<Record<number, string>>({})
   const [language, setLanguage] = useState<'sql' | 'python' | 'go' | 'javascript'>('sql')
-  const [ideCode, setIdeCode] = useState<string>(
-    '-- Решите задачу:\n' +
-      '-- Верните сумму всех чисел из входного массива.\n' +
-      '-- Пример: [1, 2, 3] -> 6\n\n' +
-      'function solve(input) {\n' +
-      '  // your code here\n' +
-      '  return 0\n' +
-      '}\n'
-  )
+  const [ideCode, setIdeCode] = useState<string>('')
   const [backendResponsePreview, setBackendResponsePreview] = useState<string>('')
   const courseQuery = useQuery({
     queryKey: ['course', courseId],
@@ -33,8 +25,11 @@ export function CourseViewPage() {
     queryFn: fetchLessonProgressForStudent,
     enabled: Boolean(courseId),
   })
-  const isServiceDemoCourse = (courseQuery.data?.title ?? '').replace(/\s+/g, ' ').trim().toLowerCase() === 'course 4'
-  const visibleIdeLines = Math.max(8, ideCode.split('\n').length)
+  const courseBlocksQuery = useQuery({
+    queryKey: ['course-content-blocks', courseId],
+    queryFn: () => fetchCourseContentBlocks(courseId ?? ''),
+    enabled: Boolean(courseId),
+  })
 
   const lessonRows = useMemo(() => {
     const progressMap = new Map(
@@ -105,22 +100,20 @@ export function CourseViewPage() {
     },
   ]
 
-  const handleCheckQuiz = () => {
-    message.success(`Ответ викторины "${quizValue.toUpperCase()}" отправлен на проверку`)
+  const handleCheckQuiz = (blockIndex: number) => {
+    const answer = quizAnswers[blockIndex]
+    message.success(`Ответ викторины "${(answer ?? '—').toUpperCase()}" отправлен на проверку`)
   }
 
-  const handleSendMaterialAsJson = () => {
+  const handleSendMaterialAsJson = (block: Extract<LessonContentBlock, { type: 'ide' }>, blockIndex: number) => {
     const payload = {
       courseId,
-      lessonId: lessonRows[0]?.id ?? null,
-      quizAnswer: quizValue,
+      blockIndex,
+      quizAnswers,
       language,
-      code: ideCode,
-      tests: [
-        { input: '[1,2,3]', expected: '6' },
-        { input: '[10,-5,7]', expected: '12' },
-        { input: '[]', expected: '0' },
-      ],
+      task: block.task ?? null,
+      code: ideCode || block.template || '',
+      tests: block.tests,
       sentAt: new Date().toISOString(),
     }
     alert(`DEMO CHECK REQUEST:\n\n${JSON.stringify(payload, null, 2)}`)
@@ -135,6 +128,120 @@ export function CourseViewPage() {
     }
     setBackendResponsePreview(JSON.stringify(mockBackendResponse, null, 2))
     message.success('Проверка вызвала alert. Окно ниже зарезервировано под ответ бэка.')
+  }
+
+  const renderCourseBlock = (block: LessonContentBlock, idx: number) => {
+    if (block.type === 'text') {
+      return (
+        <Typography.Paragraph key={`course-text-${idx}`}>
+          {block.text}
+        </Typography.Paragraph>
+      )
+    }
+    if (block.type === 'video') {
+      return (
+        <div className="lesson-inline-video" key={`course-video-${idx}`}>
+          <iframe
+            src={block.embedUrl}
+            title={`${courseQuery.data?.title ?? 'Course'} video ${idx + 1}`}
+            loading="lazy"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            referrerPolicy="strict-origin-when-cross-origin"
+            allowFullScreen
+          />
+        </div>
+      )
+    }
+    if (block.type === 'quiz') {
+      return (
+        <Card key={`course-quiz-${idx}`} className="neo-card" size="small">
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Typography.Text strong>{block.title ?? 'Квиз'}</Typography.Text>
+            <Typography.Paragraph style={{ marginBottom: 0 }}>{block.question}</Typography.Paragraph>
+            <Radio.Group
+              value={quizAnswers[idx] ?? 'a'}
+              onChange={(e) => setQuizAnswers((prev) => ({ ...prev, [idx]: e.target.value }))}
+            >
+              <Space direction="vertical">
+                {block.options.map((option, optionIndex) => (
+                  <Radio value={String.fromCharCode(97 + optionIndex)} key={`${idx}-${option}`}>
+                    {String.fromCharCode(65 + optionIndex)}. {option}
+                  </Radio>
+                ))}
+              </Space>
+            </Radio.Group>
+            <Button type="primary" className="neo-gradient-button" onClick={() => handleCheckQuiz(idx)}>
+              Проверить викторину
+            </Button>
+          </Space>
+        </Card>
+      )
+    }
+    if (block.type === 'ide') {
+      const currentCode = ideCode || block.template || ''
+      const visibleIdeLines = Math.max(8, currentCode.split('\n').length)
+      return (
+        <Card key={`course-ide-${idx}`} className="neo-card" size="small">
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Typography.Text strong>{block.title ?? 'Практика в IDE'}</Typography.Text>
+            <Typography.Paragraph style={{ marginBottom: 0 }}>
+              {block.task ?? 'Задача пока не добавлена в БД.'}
+            </Typography.Paragraph>
+            <Space align="center">
+              <Typography.Text type="secondary">Язык:</Typography.Text>
+              <Select
+                value={language}
+                style={{ width: 180 }}
+                onChange={(value) => setLanguage(value)}
+                options={[
+                  { value: 'sql', label: 'SQL' },
+                  { value: 'python', label: 'Python' },
+                  { value: 'go', label: 'Go' },
+                  { value: 'javascript', label: 'JavaScript' },
+                ]}
+              />
+            </Space>
+            <div className="course-ide-shell">
+              <div className="course-ide-gutter" aria-hidden>
+                {Array.from({ length: visibleIdeLines }, (_, i) => (
+                  <div key={`line-${idx}-${i + 1}`}>{i + 1}</div>
+                ))}
+              </div>
+              <Input.TextArea
+                className="course-ide-textarea"
+                autoSize={{ minRows: 10 }}
+                value={currentCode}
+                onChange={(e) => setIdeCode(e.target.value)}
+                spellCheck={false}
+              />
+            </div>
+            <div className="course-test-cases">
+              <Typography.Text strong>Тесты (input → output):</Typography.Text>
+              <ul className="sketch-list" style={{ marginTop: 6 }}>
+                {block.tests.map((test) => (
+                  <li key={`${idx}-${test.input}-${test.expected}`}>
+                    <code>{test.input}</code> → <code>{test.expected}</code>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <Space>
+              <Button type="primary" className="neo-gradient-button" onClick={() => handleSendMaterialAsJson(block, idx)}>
+                Проверить ответ (JSON)
+              </Button>
+              <Button className="neo-purple-btn">Отправить редактору курса</Button>
+            </Space>
+            {backendResponsePreview && (
+              <Card size="small" className="neo-card">
+                <Typography.Text strong>Ответ бэка (JSON)</Typography.Text>
+                <pre className="course-json-preview">{backendResponsePreview}</pre>
+              </Card>
+            )}
+          </Space>
+        </Card>
+      )
+    }
+    return null
   }
 
   return (
@@ -166,101 +273,12 @@ export function CourseViewPage() {
         />
       </Card>
 
-      {isServiceDemoCourse && (
+      {(courseBlocksQuery.data?.length ?? 0) > 0 && (
         <Row gutter={[16, 16]}>
-          <Col xs={24} lg={14}>
+          <Col xs={24}>
             <Card className="neo-card" title="Контрольное задание курса">
               <Space direction="vertical" size={14} style={{ width: '100%' }}>
-                <Typography.Text strong>Часть 1: Викторина</Typography.Text>
-                <Radio.Group value={quizValue} onChange={(e) => setQuizValue(e.target.value)}>
-                  <Space direction="vertical">
-                    <Radio value="a">A. Настроить CI с линтером и тестами</Radio>
-                    <Radio value="b">B. Удалить пайплайн и деплоить вручную</Radio>
-                    <Radio value="c">C. Запускать проверки только по пятницам</Radio>
-                  </Space>
-                </Radio.Group>
-                <Button type="primary" className="neo-gradient-button" onClick={handleCheckQuiz}>
-                  Проверить викторину
-                </Button>
-
-                <Typography.Text strong>Часть 2: Практика в IDE</Typography.Text>
-                <Card size="small" className="neo-card">
-                  <Space direction="vertical" size={10} style={{ width: '100%' }}>
-                    <Typography.Text>
-                      <strong>Задача:</strong> реализуйте функцию <code>solve(input)</code>, которая возвращает сумму
-                      элементов массива.
-                    </Typography.Text>
-                    <div className="course-test-cases">
-                      <Typography.Text strong>Тесты (input → output):</Typography.Text>
-                      <ul className="sketch-list" style={{ marginTop: 6 }}>
-                        <li><code>[1, 2, 3]</code> → <code>6</code></li>
-                        <li><code>[10, -5, 7]</code> → <code>12</code></li>
-                        <li><code>[]</code> → <code>0</code></li>
-                      </ul>
-                    </div>
-                    <Space align="center">
-                      <Typography.Text type="secondary">Язык:</Typography.Text>
-                      <Select
-                        value={language}
-                        style={{ width: 180 }}
-                        onChange={(value) => setLanguage(value)}
-                        options={[
-                          { value: 'sql', label: 'SQL' },
-                          { value: 'python', label: 'Python' },
-                          { value: 'go', label: 'Go' },
-                          { value: 'javascript', label: 'JavaScript' },
-                        ]}
-                      />
-                    </Space>
-                    <div className="course-ide-shell">
-                      <div className="course-ide-gutter" aria-hidden>
-                        {Array.from({ length: visibleIdeLines }, (_, i) => (
-                          <div key={`line-${i + 1}`}>{i + 1}</div>
-                        ))}
-                      </div>
-                      <Input.TextArea
-                        className="course-ide-textarea"
-                        autoSize={{ minRows: 10 }}
-                        value={ideCode}
-                        onChange={(e) => setIdeCode(e.target.value)}
-                        spellCheck={false}
-                      />
-                    </div>
-                  </Space>
-                </Card>
-                <Space>
-                  <Button type="primary" className="neo-gradient-button" onClick={handleSendMaterialAsJson}>
-                    Проверить ответ (JSON)
-                  </Button>
-                  <Button className="neo-purple-btn">Отправить редактору курса</Button>
-                </Space>
-                {backendResponsePreview && (
-                  <Card size="small" className="neo-card">
-                    <Typography.Text strong>Ответ бэка (JSON)</Typography.Text>
-                    <pre className="course-json-preview">{backendResponsePreview}</pre>
-                  </Card>
-                )}
-              </Space>
-            </Card>
-          </Col>
-          <Col xs={24} lg={10}>
-            <Card className="neo-card" title="Видео (по необходимости)">
-              <div className="course-demo-video-placeholder">
-                <Typography.Text type="secondary">Поле для видео-лекции / разбора задания</Typography.Text>
-              </div>
-              <Space direction="vertical" style={{ marginTop: 12, width: '100%' }}>
-                <Typography.Link href="https://www.youtube.com/watch?v=dQw4w9WgXcQ" target="_blank">
-                  Видео 1: Вводная лекция
-                </Typography.Link>
-                <Typography.Link href="https://www.youtube.com/watch?v=9bZkp7q19f0" target="_blank">
-                  Видео 2: Разбор практики
-                </Typography.Link>
-                <Typography.Link href="https://www.youtube.com/watch?v=J---aiyznGQ" target="_blank">
-                  Видео 3: Контрольное задание
-                </Typography.Link>
-                <Typography.Link href="https://www.youtube.com/watch?v=3GwjfUFyY6M" target="_blank">
-                  Видео 4: Частые ошибки
-                </Typography.Link>
+                {courseBlocksQuery.data?.map((block, idx) => renderCourseBlock(block, idx))}
               </Space>
             </Card>
           </Col>

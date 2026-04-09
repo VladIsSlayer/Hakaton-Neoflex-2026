@@ -1,10 +1,11 @@
 import { getSupabase } from '@/api/supabase'
 
-type CourseRow = {
+export type CourseRow = {
   id: string
   title: string
   description?: string | null
   is_published?: boolean | null
+  content_blocks_json?: unknown
 }
 
 export type LessonRow = {
@@ -22,7 +23,7 @@ export type LessonRow = {
   ide_task?: string | null
   ide_template?: string | null
   tests_json?: string | null
-  content_blocks_json?: string | null
+  content_blocks_json?: unknown
 }
 
 type EnrollmentRow = {
@@ -143,7 +144,7 @@ async function selectFirstAvailable<T>(tables: string[], selectClause: string): 
 export async function fetchCourses(): Promise<CourseRow[]> {
   const rows = await selectFirstAvailable<CourseRow>(
     ['courses', 'COURSES'],
-    'id,title,description,is_published'
+    'id,title,description,is_published,content_blocks_json'
   )
   return rows.filter((course) => course.is_published === true)
 }
@@ -179,6 +180,12 @@ export async function fetchLessons(): Promise<LessonRow[]> {
 export async function fetchCourseById(courseId: string): Promise<CourseRow | null> {
   const courses = await fetchCourses()
   return courses.find((c) => c.id === courseId) ?? null
+}
+
+export async function fetchCourseContentBlocks(courseId: string): Promise<LessonContentBlock[]> {
+  const course = await fetchCourseById(courseId)
+  if (!course) return []
+  return parseContentBlocks(course.content_blocks_json)
 }
 
 export async function fetchLessonsByCourse(courseId: string): Promise<LessonRow[]> {
@@ -441,10 +448,10 @@ function parseTests(value: string | null | undefined): Array<{ input: string; ex
   }
 }
 
-function parseContentBlocks(value: string | null | undefined): LessonContentBlock[] {
+function parseContentBlocks(value: unknown): LessonContentBlock[] {
   if (!value) return []
   try {
-    const parsed = JSON.parse(value)
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value
     if (!Array.isArray(parsed)) return []
     const blocks: LessonContentBlock[] = []
     for (const raw of parsed) {
