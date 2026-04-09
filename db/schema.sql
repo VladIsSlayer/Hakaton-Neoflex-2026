@@ -91,7 +91,18 @@ CREATE INDEX IF NOT EXISTS submissions_user_task_idx ON public.submissions (user
 CREATE INDEX IF NOT EXISTS submissions_task_id_idx ON public.submissions (task_id);
 
 -- ---------------------------------------------------------------------------
--- 7. Матрица компетенций пользователя (составной PK)
+-- 7. Привязка Git issue -> user/task (для /webhooks/git)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.git_issue_bindings (
+    issue_key text PRIMARY KEY,
+    user_id uuid NOT NULL REFERENCES public.users (id) ON DELETE CASCADE,
+    task_id uuid NOT NULL REFERENCES public.tasks (id) ON DELETE CASCADE
+);
+
+COMMENT ON TABLE public.git_issue_bindings IS 'Маппинг DEV-ключей из webhook merge request на пользователя и задачу.';
+
+-- ---------------------------------------------------------------------------
+-- 8. Матрица компетенций пользователя (составной PK)
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.user_competencies (
     user_id uuid NOT NULL REFERENCES public.users (id) ON DELETE CASCADE,
@@ -103,7 +114,7 @@ CREATE TABLE IF NOT EXISTS public.user_competencies (
 COMMENT ON COLUMN public.user_competencies.level IS 'Баллы 0..100; инкремент +10 при success, cap на стороне приложения.';
 
 -- ---------------------------------------------------------------------------
--- 8. Записи на курс и агрегированный прогресс
+-- 9. Записи на курс и агрегированный прогресс
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.enrollments (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"time"
 
@@ -16,19 +17,20 @@ import (
 
 func main() {
 	cfg := config.Load()
-	if cfg.DatabaseURL != "" {
-		log.Println("DATABASE_URL is set; PostgreSQL store is not wired yet — using in-memory store")
+	if cfg.DatabaseURL == "" {
+		log.Fatal("DATABASE_URL is required: backend now runs with PostgreSQL store")
 	}
 
-	mem, err := store.NewMemoryFromJSON(cfg.SeedJSONPath)
+	pg, err := store.NewPostgres(context.Background(), cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("load seed JSON (%s): %v", cfg.SeedJSONPath, err)
+		log.Fatalf("connect postgres: %v", err)
 	}
-	log.Printf("loaded data from %s (in-memory; set SEED_JSON_PATH if file not found)", cfg.SeedJSONPath)
+	defer pg.Close()
+	log.Println("connected to PostgreSQL")
 
-	authH := &handlers.Auth{Store: mem, JWTSecret: cfg.JWTSecret, TokenTTL: cfg.TokenTTL}
-	userH := &handlers.User{Store: mem}
-	courseH := &handlers.Course{Store: mem}
+	authH := &handlers.Auth{Store: pg, JWTSecret: cfg.JWTSecret, TokenTTL: cfg.TokenTTL}
+	userH := &handlers.User{Store: pg}
+	courseH := &handlers.Course{Store: pg}
 	j0 := &judge0.Client{
 		BaseURL:       cfg.Judge0BaseURL,
 		AuthToken:     cfg.Judge0AuthToken,
@@ -38,9 +40,9 @@ func main() {
 	if cfg.Judge0AuthToken == "" && cfg.Judge0RapidAPIKey == "" {
 		log.Println("Judge0: set JUDGE0_AUTH_TOKEN or JUDGE0_RAPIDAPI_KEY if submissions fail (CE often requires auth)")
 	}
-	taskH := &handlers.TaskCheck{Store: mem, Runner: j0}
-	gitWh := &handlers.GitWebhook{Store: mem, Secret: cfg.WebhookGitSecret}
-	adminH := &handlers.Admin{Store: mem, DefaultCourseID: cfg.StatsCourseID}
+	taskH := &handlers.TaskCheck{Store: pg, Runner: j0}
+	gitWh := &handlers.GitWebhook{Store: pg, Secret: cfg.WebhookGitSecret}
+	adminH := &handlers.Admin{Store: pg, DefaultCourseID: cfg.StatsCourseID}
 	if cfg.WebhookGitSecret == "" {
 		log.Println("WEBHOOK_GIT_SECRET is empty — Git webhook accepts unsigned requests (set for production)")
 	}

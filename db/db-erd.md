@@ -49,6 +49,12 @@ erDiagram
         text user_code
     }
 
+    GIT_ISSUE_BINDINGS {
+        varchar issue_key PK "e.g. DEV-85"
+        uuid user_id FK
+        uuid task_id FK
+    }
+
     USER_COMPETENCIES {
         uuid user_id PK "FK → USERS"
         uuid competency_id PK "FK → COMPETENCIES"
@@ -75,6 +81,8 @@ erDiagram
     COMPETENCIES ||--o{ USER_COMPETENCIES : "уровень по навыку"
 
     TASKS ||--o{ SUBMISSIONS : "отправки по задаче"
+    USERS ||--o{ GIT_ISSUE_BINDINGS : "issue -> студент"
+    TASKS ||--o{ GIT_ISSUE_BINDINGS : "issue -> задача"
 ```
 
 ## Связи (кратко)
