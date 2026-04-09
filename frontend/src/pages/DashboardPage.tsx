@@ -1,9 +1,10 @@
-import { Avatar, Button, Card, Col, Input, Pagination, Progress, Row, Space, Tag, Typography } from 'antd'
+import { Avatar, Button, Card, Col, Input, Pagination, Progress, Row, Space, Tag, Typography, message } from 'antd'
 import { SearchOutlined } from '@ant-design/icons'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { fetchCourseAudienceStats, fetchCourses, fetchStudentSnapshot } from '@/api/catalog'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ApiError } from '@/api/client'
+import { fetchCourseAudienceStats, fetchCourses, fetchStudentSnapshot, enrollInCourse } from '@/api/catalog'
 import { useAuthStore } from '@/stores/authStore'
 
 const MOCK_COURSES = [
@@ -22,7 +23,9 @@ const MOCK_COURSES = [
 
 export function DashboardPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const isLoggedIn = useAuthStore((s) => Boolean(s.accessToken))
+  const user = useAuthStore((s) => s.user)
   const [page, setPage] = useState(1)
   const [activeFilter, setActiveFilter] = useState('Все отрасли')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -42,8 +45,33 @@ export function DashboardPage() {
     queryFn: fetchCourseAudienceStats,
   })
 
+  const enrollMutation = useMutation({
+    mutationFn: enrollInCourse,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['student-snapshot'] })
+      message.success('Вы записаны на курс')
+    },
+    onError: (e: unknown) => {
+      if (e instanceof ApiError) {
+        if (e.status === 404) {
+          message.error('Курс не найден или не опубликован')
+          return
+        }
+        if (e.status === 403) {
+          message.error('Запись доступна только студентам')
+          return
+        }
+        message.error(e.message || 'Не удалось записаться')
+        return
+      }
+      message.error('Не удалось записаться')
+    },
+  })
+
   const coursesSource = useMemo(() => {
-    if (!coursesQuery.data || coursesQuery.data.length === 0) return MOCK_COURSES
+    if (!coursesQuery.data || coursesQuery.data.length === 0) {
+      return MOCK_COURSES.map((c) => ({ ...c, isEnrolled: false }))
+    }
     const audienceMap = new Map(
       (audienceQuery.data ?? []).map((stat) => [stat.courseId, stat.enrollments])
     )
@@ -58,6 +86,7 @@ export function DashboardPage() {
       skill: (course.title.match(/[A-Za-zА-Яа-я]/)?.[0] ?? 'C').toUpperCase(),
       enrollments: audienceMap.get(course.id) ?? 0,
       sticker: index === 0 ? 'TOP' : index === 1 ? 'HIT' : '',
+      isEnrolled: enrollmentMap.has(course.id),
     }))
   }, [coursesQuery.data, audienceQuery.data, studentQuery.data?.enrolledCourses, isLoggedIn])
 
@@ -131,7 +160,22 @@ export function DashboardPage() {
                   </Space>
                 </Space>
                 <Typography.Text type="secondary">Вступили: {course.enrollments}</Typography.Text>
-                {isLoggedIn && <Progress percent={course.progress} size="small" />}
+                {isLoggedIn && user?.role === 'student' && !course.isEnrolled ? (
+                  <Button
+                    size="small"
+                    type="primary"
+                    className="neo-gradient-button"
+                    loading={enrollMutation.isPending && enrollMutation.variables === course.id}
+                    onClick={(ev) => {
+                      ev.stopPropagation()
+                      enrollMutation.mutate(course.id)
+                    }}
+                  >
+                    Записаться на курс
+                  </Button>
+                ) : isLoggedIn ? (
+                  <Progress percent={course.progress} size="small" />
+                ) : null}
               </Space>
             </Card>
           </Col>

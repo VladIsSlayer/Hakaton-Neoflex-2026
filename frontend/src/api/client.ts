@@ -1,23 +1,34 @@
 import { useAuthStore } from '@/stores/authStore'
 
 export class ApiError extends Error {
-  constructor(
-    public status: number,
-    public code: string,
-    message: string,
-    public details?: unknown
-  ) {
+  status: number
+  code: string
+  details?: unknown
+
+  constructor(status: number, code: string, message: string, details?: unknown) {
     super(message)
     this.name = 'ApiError'
+    this.status = status
+    this.code = code
+    this.details = details
   }
 }
 
-function apiBase(): string {
-  const base = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
-  if (!base) {
-    throw new Error('VITE_API_URL не задан (например http://localhost:8080)')
+/** База API без завершающего /. Пустая строка в dev — относительные пути (прокси Vite → бэкенд). */
+export function getApiBaseURL(): string {
+  return (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+}
+
+/** Полный URL пути API (path должен начинаться с /). */
+export function apiURL(path: string): string {
+  const base = getApiBaseURL()
+  if (!path.startsWith('/')) {
+    path = `/${path}`
   }
-  return base
+  if (base === '') {
+    return path
+  }
+  return `${base}${path}`
 }
 
 export function getAccessToken(): string | null {
@@ -36,7 +47,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit & { auth?: bo
       headers.set('Authorization', `Bearer ${t}`)
     }
   }
-  const res = await fetch(`${apiBase()}${path}`, { ...rest, headers })
+  const res = await fetch(apiURL(path), { ...rest, headers })
   const text = await res.text()
   let body: unknown = null
   if (text) {

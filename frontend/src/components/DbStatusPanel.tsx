@@ -1,15 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
+import { apiURL } from '@/api/client'
 
 /** Проверка Go API и PostgreSQL через GET /api/health. */
 export function DbStatusPanel() {
   const query = useQuery({
     queryKey: ['backend-health'],
     queryFn: async () => {
-      const base = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
-      if (!base) {
-        throw new Error('VITE_API_URL не задан (например http://localhost:8080)')
-      }
-      const res = await fetch(`${base}/api/health`)
+      const res = await fetch(apiURL('/api/health'))
       const text = await res.text()
       let body: unknown = null
       if (text) {

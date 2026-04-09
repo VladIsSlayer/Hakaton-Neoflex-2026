@@ -180,6 +180,14 @@ async function fetchMeSnapshot(): Promise<MeSnapshotDTO | null> {
   }
 }
 
+export async function enrollInCourse(courseId: string): Promise<{ course_id: string }> {
+  return apiFetch<{ course_id: string }>('/api/enrollments', {
+    method: 'POST',
+    auth: true,
+    body: JSON.stringify({ course_id: courseId }),
+  })
+}
+
 export async function fetchStudentSnapshot(): Promise<StudentSnapshot> {
   const snap = await fetchMeSnapshot()
   if (!snap) {
@@ -381,7 +389,7 @@ function parseContentBlocks(value: unknown): LessonContentBlock[] {
           language: raw?.language ? String(raw.language) : undefined,
           task: raw?.task ? String(raw.task) : undefined,
           template,
-          tests: tests.filter((test) => test.input || test.expected),
+          tests: tests.filter((test: { input: string; expected: string }) => test.input || test.expected),
         })
       }
     }

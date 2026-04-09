@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -11,7 +12,7 @@ type Config struct {
 	AppEnv             string
 	JWTSecret          []byte
 	TokenTTL           time.Duration
-	FrontendOrigin     string
+	FrontendOrigins    []string
 	DatabaseURL        string
 	SeedJSONPath       string
 	Judge0BaseURL      string
@@ -33,14 +34,11 @@ func Load() Config {
 		port = "8080"
 	}
 	secret := os.Getenv("JWT_SECRET")
-	origin := os.Getenv("FRONTEND_ORIGIN")
-	if origin == "" {
-		origin = "http://localhost:5173"
-	}
 	appEnv := os.Getenv("APP_ENV")
 	if appEnv == "" {
 		appEnv = "development"
 	}
+	frontendOrigins := parseFrontendCORSOrigins(appEnv)
 	seedPath := os.Getenv("SEED_JSON_PATH")
 	if seedPath == "" {
 		seedPath = "data/seed.json"
@@ -62,7 +60,7 @@ func Load() Config {
 		AppEnv:             appEnv,
 		JWTSecret:          []byte(secret),
 		TokenTTL:           24 * time.Hour,
-		FrontendOrigin:     origin,
+		FrontendOrigins:    frontendOrigins,
 		DatabaseURL:        os.Getenv("DATABASE_URL"),
 		SeedJSONPath:       seedPath,
 		Judge0BaseURL:      j0base,
@@ -101,4 +99,66 @@ func readDuration(name string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return v
+}
+
+// parseFrontendCORSOrigins — AllowOrigins для CORS.
+// FRONTEND_ORIGINS (через запятую) имеет приоритет над FRONTEND_ORIGIN.
+// В development к каждому http://localhost:PORT добавляется http://127.0.0.1:PORT и наоборот.
+func parseFrontendCORSOrigins(appEnv string) []string {
+	raw := strings.TrimSpace(os.Getenv("FRONTEND_ORIGINS"))
+	if raw == "" {
+		raw = strings.TrimSpace(os.Getenv("FRONTEND_ORIGIN"))
+	}
+	if raw == "" {
+		raw = "http://localhost:5173"
+	}
+	parts := strings.Split(raw, ",")
+	seen := make(map[string]bool)
+	var out []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	if len(out) == 0 {
+		out = []string{"http://localhost:5173"}
+	}
+	if appEnv == "development" {
+		out = mirrorLocalhostLoopbackOrigins(out, seen)
+	}
+	return out
+}
+
+func mirrorLocalhostLoopbackOrigins(origins []string, seen map[string]bool) []string {
+	out := append([]string(nil), origins...)
+	for _, o := range origins {
+		if alt := httpLocalhostTo127(o); alt != "" && !seen[alt] {
+			seen[alt] = true
+			out = append(out, alt)
+		}
+		if alt := http127ToLocalhost(o); alt != "" && !seen[alt] {
+			seen[alt] = true
+			out = append(out, alt)
+		}
+	}
+	return out
+}
+
+func httpLocalhostTo127(o string) string {
+	const p = "http://localhost:"
+	if strings.HasPrefix(o, p) {
+		return "http://127.0.0.1:" + strings.TrimPrefix(o, p)
+	}
+	return ""
+}
+
+func http127ToLocalhost(o string) string {
+	const p = "http://127.0.0.1:"
+	if strings.HasPrefix(o, p) {
+		return "http://localhost:" + strings.TrimPrefix(o, p)
+	}
+	return ""
 }

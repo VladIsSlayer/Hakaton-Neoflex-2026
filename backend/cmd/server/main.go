@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"strings"
 	"time"
 
 	"neoflex-lms/internal/auth"
@@ -64,7 +65,7 @@ func main() {
 
 	r := gin.Default()
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{cfg.FrontendOrigin},
+		AllowOrigins:     cfg.FrontendOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
@@ -111,7 +112,7 @@ func main() {
 	mod.GET("/admin/users/stats", adminH.UserStats)
 
 	addr := ":" + cfg.Port
-	log.Printf("listening on %s (CORS origin: %s)", addr, cfg.FrontendOrigin)
+	log.Printf("listening on %s (CORS origins: %s)", addr, strings.Join(cfg.FrontendOrigins, ", "))
 	if err := r.Run(addr); err != nil {
 		log.Fatal(err)
 	}

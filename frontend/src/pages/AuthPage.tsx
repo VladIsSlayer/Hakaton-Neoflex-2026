@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { ApiError, apiFetch } from '@/api/client'
 import { useAuthStore, type AuthUser } from '@/stores/authStore'
 
-type LoginResponse = {
+type AuthTokenResponse = {
   access_token: string
   token_type: string
   expires_in: number
@@ -22,7 +22,7 @@ export function AuthPage() {
 
   const onLogin = async (values: { email: string; password: string }) => {
     try {
-      const data = await apiFetch<LoginResponse>('/api/auth/login', {
+      const data = await apiFetch<AuthTokenResponse>('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify({
           email: values.email.trim(),
@@ -42,6 +42,42 @@ export function AuthPage() {
     }
   }
 
+  const onRegister = async (values: {
+    register_email: string
+    full_name: string
+    register_password: string
+    register_password_repeat: string
+  }) => {
+    try {
+      const data = await apiFetch<AuthTokenResponse>('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({
+          email: values.register_email.trim(),
+          full_name: values.full_name.trim(),
+          password: values.register_password,
+        }),
+      })
+      setSession(data.access_token, data.user)
+      await queryClient.invalidateQueries()
+      message.success('Регистрация прошла успешно')
+      navigate('/profile')
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.status === 409 || e.code === 'conflict') {
+          message.error('Этот email уже зарегистрирован')
+          return
+        }
+        if (e.status === 400) {
+          message.error(e.message || 'Проверьте введённые данные')
+          return
+        }
+        message.error(e.message || 'Ошибка регистрации')
+        return
+      }
+      message.error(e instanceof Error ? e.message : 'Сеть недоступна')
+    }
+  }
+
   return (
     <Row justify="center">
       <Col xs={24} sm={20} md={14} lg={10} xl={8}>
@@ -51,7 +87,7 @@ export function AuthPage() {
               Вход и регистрация
             </Typography.Title>
             <Typography.Text type="secondary">
-              Авторизация через backend API (JWT). Регистрация появится позже — используйте учётную запись из БД.
+              Вход и регистрация через backend (JWT). Новые пользователи получают роль студента.
             </Typography.Text>
             <Tabs
               activeKey={activeTab}
@@ -83,27 +119,52 @@ export function AuthPage() {
                   key: 'register',
                   label: 'Регистрация',
                   children: (
-                    <Form layout="vertical">
-                      <Form.Item label="Email" name="register_email" rules={[{ required: true }]}>
-                        <Input placeholder="student@example.com" />
+                    <Form layout="vertical" onFinish={onRegister}>
+                      <Form.Item
+                        label="Email"
+                        name="register_email"
+                        rules={[{ required: true, type: 'email', message: 'Укажите корректный email' }]}
+                      >
+                        <Input placeholder="student@example.com" autoComplete="email" />
                       </Form.Item>
-                      <Form.Item label="Пароль" name="register_password" rules={[{ required: true }]}>
-                        <Input.Password placeholder="••••••••" />
+                      <Form.Item
+                        label="ФИО"
+                        name="full_name"
+                        rules={[{ required: true, message: 'Укажите имя' }]}
+                      >
+                        <Input placeholder="Иван Иванов" autoComplete="name" />
+                      </Form.Item>
+                      <Form.Item
+                        label="Пароль"
+                        name="register_password"
+                        rules={[
+                          { required: true, message: 'Введите пароль' },
+                          { min: 8, message: 'Не менее 8 символов' },
+                        ]}
+                      >
+                        <Input.Password placeholder="••••••••" autoComplete="new-password" />
                       </Form.Item>
                       <Form.Item
                         label="Повтор пароля"
                         name="register_password_repeat"
-                        rules={[{ required: true }]}
+                        dependencies={['register_password']}
+                        rules={[
+                          { required: true, message: 'Повторите пароль' },
+                          ({ getFieldValue }) => ({
+                            validator(_, value) {
+                              if (!value || getFieldValue('register_password') === value) {
+                                return Promise.resolve()
+                              }
+                              return Promise.reject(new Error('Пароли не совпадают'))
+                            },
+                          }),
+                        ]}
                       >
-                        <Input.Password placeholder="••••••••" />
+                        <Input.Password placeholder="••••••••" autoComplete="new-password" />
                       </Form.Item>
-                      <Button type="primary" className="neo-gradient-button" disabled>
+                      <Button type="primary" htmlType="submit" className="neo-gradient-button">
                         Зарегистрироваться
                       </Button>
-                      <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
-                        Регистрация через API пока не подключена — создайте пользователя в PostgreSQL или попросите
-                        администратора.
-                      </Typography.Paragraph>
                     </Form>
                   ),
                 },
