@@ -289,6 +289,7 @@ SELECT t.id::text, t.lesson_id::text, t.language_id, t.reference_answer, t.compe
 FROM public.tasks t
 JOIN public.lessons l ON l.id = t.lesson_id
 JOIN public.courses co ON co.id = l.course_id
+LEFT JOIN public.competencies c ON c.id = t.competency_id
 WHERE l.id = $1::uuid AND co.is_published = true
 ORDER BY t.id
 LIMIT 1`

@@ -8,6 +8,32 @@ export type CourseRow = {
   content_blocks_json?: unknown
 }
 
+export type LessonTaskMeta = {
+  task_id: string
+  language_id: number
+  /** С бэкенда; при отсутствии показываем Judge0 id. */
+  language_label?: string
+}
+
+/** Ответ POST /api/tasks/:id/check после прогона в Judge0. */
+export type TaskCheckResponse = {
+  status: 'success' | 'failed'
+  phase: string
+  execution_status: string
+  /** Классификация с бэка (compile_error, wrong_answer, …). */
+  failure_kind?: string
+  error: string
+  console: string
+  stderr?: string
+  compile_output?: string
+  judge_status?: string
+  score: number
+  updated_progress_percent: number
+  course_progress_percent: number
+  competencies: unknown
+  already_solved: boolean
+}
+
 export type LessonRow = {
   id: string
   course_id: string
@@ -163,9 +189,20 @@ export async function fetchCourseContentBlocks(courseId: string): Promise<Lesson
   return parseContentBlocks(course.content_blocks_json)
 }
 
+/** Уроки конкретного курса с `task_id` и прочими полями (не фильтр по глобальному каталогу). */
 export async function fetchLessonsByCourse(courseId: string): Promise<LessonRow[]> {
-  const all = await fetchLessons()
-  return all.filter((lesson) => lesson.course_id === courseId)
+  try {
+    const rows = await apiFetch<LessonRow[]>(
+      `/api/courses/${encodeURIComponent(courseId)}/lessons`,
+      { method: 'GET' }
+    )
+    return [...rows].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) {
+      return []
+    }
+    throw e
+  }
 }
 
 async function fetchMeSnapshot(): Promise<MeSnapshotDTO | null> {
@@ -213,14 +250,11 @@ export async function fetchStudentSnapshot(): Promise<StudentSnapshot> {
   }
 }
 
-export async function fetchLessonTaskMeta(
-  lessonId: string
-): Promise<{ task_id: string; language_id: number } | null> {
+export async function fetchLessonTaskMeta(lessonId: string): Promise<LessonTaskMeta | null> {
   try {
-    return await apiFetch<{ task_id: string; language_id: number }>(
-      `/api/lessons/${encodeURIComponent(lessonId)}/task`,
-      { method: 'GET' }
-    )
+    return await apiFetch<LessonTaskMeta>(`/api/lessons/${encodeURIComponent(lessonId)}/task`, {
+      method: 'GET',
+    })
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) {
       return null
@@ -233,8 +267,8 @@ export async function submitTaskCheck(
   taskId: string,
   userCode: string,
   languageId: number
-): Promise<Record<string, unknown>> {
-  return apiFetch<Record<string, unknown>>(`/api/tasks/${encodeURIComponent(taskId)}/check`, {
+): Promise<TaskCheckResponse> {
+  return apiFetch<TaskCheckResponse>(`/api/tasks/${encodeURIComponent(taskId)}/check`, {
     method: 'POST',
     auth: true,
     body: JSON.stringify({ user_code: userCode, language_id: languageId }),

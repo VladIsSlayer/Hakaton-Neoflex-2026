@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"neoflex-lms/internal/apierr"
 	"neoflex-lms/internal/auth"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+const maxUserCodeRunes = 120_000
 
 type CodeRunner interface {
 	Run(ctx context.Context, languageID int, sourceCode string) (stdout, stderr, compileOut string, executedOK bool, statusDesc string, err error)
@@ -54,6 +57,14 @@ func (h *TaskCheck) Check(c *gin.Context) {
 		apierr.Write(c, http.StatusBadRequest, apierr.CodeInvalidRequest, "invalid request body", nil)
 		return
 	}
+	if strings.TrimSpace(req.UserCode) == "" {
+		apierr.Write(c, http.StatusBadRequest, apierr.CodeInvalidRequest, "user_code is empty", nil)
+		return
+	}
+	if utf8.RuneCountInString(req.UserCode) > maxUserCodeRunes {
+		apierr.Write(c, http.StatusBadRequest, apierr.CodeInvalidRequest, "user_code too large", nil)
+		return
+	}
 
 	task, err := h.Store.GetTask(c.Request.Context(), taskID)
 	if err != nil {
@@ -81,35 +92,43 @@ func (h *TaskCheck) Check(c *gin.Context) {
 		_ = h.Store.InsertFailedSubmission(c.Request.Context(), userID, taskID, req.UserCode)
 		msg := firstNonEmpty(compileOut, stderr, statusDesc, stdout)
 		c.JSON(http.StatusOK, gin.H{
-			"status":                     "failed",
-			"phase":                      executionPhaseCompleted,
-			"execution_status":           "failed",
-			"error":                      msg,
-			"console":                    strings.TrimSpace(stdout),
-			"score":                      0,
-			"updated_progress_percent":   0,
-			"course_progress_percent":    0,
-			"competencies":               nil,
-			"already_solved":             false,
+			"status":                   "failed",
+			"phase":                    executionPhaseCompleted,
+			"execution_status":         "failed",
+			"failure_kind":             judgeFailureKind(compileOut, stderr, statusDesc, msg),
+			"error":                    msg,
+			"console":                  NormalizeJudgeOutput(stdout),
+			"stderr":                   strings.TrimSpace(stderr),
+			"compile_output":           strings.TrimSpace(compileOut),
+			"judge_status":             strings.TrimSpace(statusDesc),
+			"score":                    0,
+			"updated_progress_percent": 0,
+			"course_progress_percent":  0,
+			"competencies":             nil,
+			"already_solved":           false,
 		})
 		return
 	}
 
-	got := strings.TrimSpace(stdout)
-	want := strings.TrimSpace(task.ReferenceAnswer)
+	got := NormalizeJudgeOutput(stdout)
+	want := NormalizeJudgeOutput(task.ReferenceAnswer)
 	if got != want {
 		_ = h.Store.InsertFailedSubmission(c.Request.Context(), userID, taskID, req.UserCode)
 		c.JSON(http.StatusOK, gin.H{
-			"status":                     "failed",
-			"phase":                      executionPhaseCompleted,
-			"execution_status":           "failed",
-			"error":                      "output does not match expected answer",
-			"console":                    got,
-			"score":                      0,
-			"updated_progress_percent":   0,
-			"course_progress_percent":    0,
-			"competencies":               nil,
-			"already_solved":             false,
+			"status":                   "failed",
+			"phase":                    executionPhaseCompleted,
+			"execution_status":         "failed",
+			"failure_kind":             "wrong_answer",
+			"error":                    "output does not match expected answer",
+			"console":                  got,
+			"stderr":                   "",
+			"compile_output":           "",
+			"judge_status":             "",
+			"score":                    0,
+			"updated_progress_percent": 0,
+			"course_progress_percent":  0,
+			"competencies":             nil,
+			"already_solved":           false,
 		})
 		return
 	}
@@ -130,15 +149,19 @@ func (h *TaskCheck) Check(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"status":                     "success",
-		"phase":                      executionPhaseCompleted,
-		"execution_status":           "success",
-		"console":                    strings.TrimSpace(stdout),
-		"error":                      "",
-		"score":                      score,
-		"updated_progress_percent":   pct,
-		"course_progress_percent":    pct,
-		"competencies":               comps,
-		"already_solved":             already,
+		"status":                   "success",
+		"phase":                    executionPhaseCompleted,
+		"execution_status":         "success",
+		"failure_kind":             "",
+		"console":                  got,
+		"error":                    "",
+		"stderr":                   "",
+		"compile_output":           "",
+		"judge_status":             "",
+		"score":                    score,
+		"updated_progress_percent": pct,
+		"course_progress_percent":  pct,
+		"competencies":             comps,
+		"already_solved":           already,
 	})
 }

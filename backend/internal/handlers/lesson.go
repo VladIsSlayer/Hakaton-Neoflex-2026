@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -10,6 +11,23 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+func judge0LanguageLabel(languageID int) string {
+	switch languageID {
+	case 60:
+		return "Go"
+	case 63:
+		return "JavaScript (Node.js)"
+	case 71:
+		return "Python 3"
+	case 72:
+		return "Ruby"
+	case 82:
+		return "PostgreSQL (SQL)"
+	default:
+		return ""
+	}
+}
 
 type LessonTask struct {
 	Tasks store.TaskCheckStore
@@ -27,9 +45,14 @@ func (h *LessonTask) TaskMeta(c *gin.Context) {
 		apierr.Write(c, http.StatusInternalServerError, apierr.CodeInternal, "internal error", nil)
 		return
 	}
+	label := judge0LanguageLabel(t.LanguageID)
+	if label == "" {
+		label = fmt.Sprintf("Judge0 #%d", t.LanguageID)
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"task_id":     t.ID,
-		"language_id": t.LanguageID,
+		"task_id":        t.ID,
+		"language_id":    t.LanguageID,
+		"language_label": label,
 	})
 }
 

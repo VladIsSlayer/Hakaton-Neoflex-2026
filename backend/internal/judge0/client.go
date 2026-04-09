@@ -12,16 +12,20 @@ import (
 )
 
 type Client struct {
-	BaseURL       string
-	AuthToken     string
-	RapidAPIKey   string
-	RapidAPIHost  string
-	HTTP          *http.Client
+	BaseURL      string
+	AuthToken    string
+	RapidAPIKey  string
+	RapidAPIHost string
+	HTTP         *http.Client
 }
 
 type submissionRequest struct {
 	SourceCode string `json:"source_code"`
 	LanguageID int    `json:"language_id"`
+	// Лимиты CE (см. Judge0 API); защита от зависаний и перерасхода памяти.
+	CPUTimeLimit             *float64 `json:"cpu_time_limit,omitempty"`
+	MemoryLimit              *int     `json:"memory_limit,omitempty"`
+	MaxProcessesAndOrThreads *int     `json:"max_processes_and_or_threads,omitempty"`
 }
 
 type submissionResponse struct {
@@ -44,6 +48,17 @@ func strPtr(s *string) string {
 
 const statusAccepted = 3
 
+func defaultLimits() submissionRequest {
+	cpu := 5.0
+	mem := 128000 // KB
+	maxProc := 60
+	return submissionRequest{
+		CPUTimeLimit:             &cpu,
+		MemoryLimit:              &mem,
+		MaxProcessesAndOrThreads: &maxProc,
+	}
+}
+
 func (c *Client) Run(ctx context.Context, languageID int, sourceCode string) (stdout, stderr, compileOut string, executedOK bool, statusDesc string, err error) {
 	base := strings.TrimRight(strings.TrimSpace(c.BaseURL), "/")
 	if base == "" {
@@ -51,10 +66,10 @@ func (c *Client) Run(ctx context.Context, languageID int, sourceCode string) (st
 	}
 	u := base + "/submissions?base64_encoded=false&wait=true"
 
-	body, err := json.Marshal(submissionRequest{
-		SourceCode: sourceCode,
-		LanguageID: languageID,
-	})
+	reqBody := defaultLimits()
+	reqBody.SourceCode = sourceCode
+	reqBody.LanguageID = languageID
+	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return "", "", "", false, "", err
 	}

@@ -810,6 +810,11 @@ code {
   overflow: auto;
 }
 
+.task-check-section-pre {
+  max-height: 260px;
+  margin-top: 6px;
+}
+
 .lesson-inline-video {
   width: 100%;
   border-radius: 12px;

@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { Button, Card, Input, Radio, Select, Space, Typography, message } from 'antd'
-import { useQuery } from '@tanstack/react-query'
+import { Alert, Button, Card, Collapse, Input, Radio, Select, Space, Typography, message } from 'antd'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   fetchCourseById,
   fetchLessonContentConfig,
@@ -9,16 +9,22 @@ import {
   fetchLessonsByCourse,
   submitTaskCheck,
   type LessonContentBlock,
+  type TaskCheckResponse,
 } from '@/api/catalog'
-import { getAccessToken } from '@/api/client'
+import { TaskCheckResultPanel } from '@/components/TaskCheckResultPanel'
+import { ApiError, getAccessToken } from '@/api/client'
 import { FREE_COURSE_ID } from '@/constants/freeCourse'
+import { JUDGE0_IDE_LANGUAGES } from '@/constants/judge0Languages'
 
 export function LessonPlayerPage() {
   const { courseId, lessonId } = useParams()
+  const queryClient = useQueryClient()
   const [quizAnswers, setQuizAnswers] = useState<Record<number, string>>({})
-  const [language, setLanguage] = useState<'sql' | 'python' | 'go' | 'javascript'>('sql')
   const [ideCode, setIdeCode] = useState('')
-  const [backendResponsePreview, setBackendResponsePreview] = useState<string>('')
+  const [taskCheckResult, setTaskCheckResult] = useState<TaskCheckResponse | null>(null)
+  const [taskCheckHttpError, setTaskCheckHttpError] = useState<string | null>(null)
+  const [checkSubmitting, setCheckSubmitting] = useState(false)
+  const [ideLanguageId, setIdeLanguageId] = useState(71)
 
   const courseQuery = useQuery({
     queryKey: ['course', courseId],
@@ -70,6 +76,17 @@ export function LessonPlayerPage() {
   const lessonContent = lessonContentQuery.data
   const lessonIdForTaskCheck = contentTarget?.lid ?? lessonId
 
+  const taskMetaQuery = useQuery({
+    queryKey: ['lesson-task-meta', lessonIdForTaskCheck],
+    queryFn: () => fetchLessonTaskMeta(lessonIdForTaskCheck!),
+    enabled: Boolean(lessonIdForTaskCheck),
+  })
+
+  useEffect(() => {
+    const id = taskMetaQuery.data?.language_id
+    if (id != null) setIdeLanguageId(id)
+  }, [taskMetaQuery.data?.language_id])
+
   const handleCheckQuiz = (blockIndex: number) => {
     const answer = quizAnswers[blockIndex]
     message.success(`Ответ "${(answer ?? '—').toUpperCase()}" отправлен на проверку`)
@@ -84,28 +101,43 @@ export function LessonPlayerPage() {
       message.error('Не выбран урок')
       return
     }
-    const meta = await fetchLessonTaskMeta(lessonIdForTaskCheck ?? lessonId)
-    if (!meta) {
-      message.error('Для этого урока нет задачи в БД (tasks). Добавьте задачу или проверьте курс.')
-      return
-    }
-    const code = ideCode || block.template || lessonContent?.ideTemplate || ''
-    if (!code.trim()) {
-      message.warning('Введите код в редакторе')
-      return
-    }
+    setCheckSubmitting(true)
     try {
-      const res = await submitTaskCheck(meta.task_id, code, meta.language_id)
-      setBackendResponsePreview(JSON.stringify(res, null, 2))
+      let meta = taskMetaQuery.data ?? null
+      if (!meta) {
+        meta = await fetchLessonTaskMeta(lessonIdForTaskCheck ?? lessonId)
+        if (meta) {
+          void queryClient.setQueryData(['lesson-task-meta', lessonIdForTaskCheck], meta)
+        }
+      }
+      if (!meta) {
+        message.error('Для этого урока нет задачи в БД (tasks). Добавьте задачу или проверьте курс.')
+        return
+      }
+      const code = ideCode || block.template || lessonContent?.ideTemplate || ''
+      if (!code.trim()) {
+        message.warning('Введите код в редакторе')
+        return
+      }
+      const res = await submitTaskCheck(meta.task_id, code, ideLanguageId)
+      setTaskCheckResult(res)
+      setTaskCheckHttpError(null)
       if (res.status === 'success') {
-        message.success('Задача принята')
-      } else {
-        message.info('Проверка завершилась без успеха — см. JSON ниже')
+        if (res.already_solved) {
+          message.success('Решение уже было засчитано ранее')
+        } else {
+          message.success('Задача принята')
+        }
+        void queryClient.invalidateQueries({ queryKey: ['student-snapshot'] })
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Ошибка сети'
       message.error(msg)
-      setBackendResponsePreview(JSON.stringify({ error: msg }, null, 2))
+      const details = e instanceof ApiError ? { code: e.code, details: e.details } : {}
+      setTaskCheckResult(null)
+      setTaskCheckHttpError(JSON.stringify({ error: msg, ...details }, null, 2))
+    } finally {
+      setCheckSubmitting(false)
     }
   }
 
@@ -166,19 +198,38 @@ export function LessonPlayerPage() {
             <Typography.Paragraph style={{ marginBottom: 0 }}>
               {block.task ?? lessonContent?.ideTask ?? 'Задача для IDE пока не добавлена в БД.'}
             </Typography.Paragraph>
-            <Space align="center">
-              <Typography.Text type="secondary">Язык:</Typography.Text>
-              <Select
-                value={language}
-                style={{ width: 180 }}
-                onChange={(value) => setLanguage(value)}
-                options={[
-                  { value: 'sql', label: 'SQL' },
-                  { value: 'python', label: 'Python' },
-                  { value: 'go', label: 'Go' },
-                  { value: 'javascript', label: 'JavaScript' },
-                ]}
-              />
+            <Space direction="vertical" size={6} style={{ width: '100%' }}>
+              <Space align="center" wrap>
+                <Typography.Text type="secondary">Язык (Judge0):</Typography.Text>
+                <Select
+                  value={ideLanguageId}
+                  style={{ minWidth: 220 }}
+                  options={JUDGE0_IDE_LANGUAGES.map((o) => ({ value: o.value, label: `${o.label} (#${o.value})` }))}
+                  onChange={(v) => setIdeLanguageId(v)}
+                />
+              </Space>
+              {taskMetaQuery.isLoading ? (
+                <Typography.Text type="secondary">Загрузка метаданных задачи…</Typography.Text>
+              ) : taskMetaQuery.isError ? (
+                <Typography.Text type="danger">
+                  Ошибка загрузки меты:{' '}
+                  {taskMetaQuery.error instanceof Error ? taskMetaQuery.error.message : 'запрос не удался'}
+                </Typography.Text>
+              ) : taskMetaQuery.data ? (
+                <Typography.Text type="secondary">
+                  Задача: <Typography.Text code>{taskMetaQuery.data.task_id}</Typography.Text>
+                  {taskMetaQuery.data.language_id !== ideLanguageId ? (
+                    <Typography.Text type="warning">
+                      {' '}
+                      Язык не совпадает с задачей в БД — нужен language_id {taskMetaQuery.data.language_id}.
+                    </Typography.Text>
+                  ) : null}
+                </Typography.Text>
+              ) : (
+                <Typography.Text type="secondary">
+                  Для этого урока нет задачи в БД — проверка недоступна.
+                </Typography.Text>
+              )}
             </Space>
             <div className="course-ide-shell">
               <div className="course-ide-gutter" aria-hidden>
@@ -208,18 +259,42 @@ export function LessonPlayerPage() {
               <Button
                 type="primary"
                 className="neo-gradient-button"
+                loading={checkSubmitting}
+                disabled={
+                  (taskMetaQuery.isSuccess && taskMetaQuery.data == null) || taskMetaQuery.isLoading
+                }
                 onClick={() => void handleSendMaterialAsJson(block)}
               >
-                Проверить ответ (JSON)
+                Отправить на проверку (Judge0)
               </Button>
-              <Button className="neo-purple-btn">Отправить на проверку</Button>
             </Space>
-            {backendResponsePreview && (
+            {taskCheckResult ? (
               <Card size="small" className="neo-card">
-                <Typography.Text strong>Ответ бэка (JSON)</Typography.Text>
-                <pre className="course-json-preview">{backendResponsePreview}</pre>
+                <Typography.Text strong style={{ display: 'block', marginBottom: 10 }}>
+                  Результат проверки
+                </Typography.Text>
+                <TaskCheckResultPanel
+                  response={taskCheckResult}
+                  rawJson={JSON.stringify(taskCheckResult, null, 2)}
+                />
               </Card>
-            )}
+            ) : null}
+            {taskCheckHttpError ? (
+              <Card size="small" className="neo-card">
+                <Alert type="error" showIcon message="Запрос к серверу не удался" />
+                <Collapse
+                  style={{ marginTop: 10 }}
+                  size="small"
+                  items={[
+                    {
+                      key: 'err',
+                      label: 'Подробности (JSON)',
+                      children: <pre className="course-json-preview">{taskCheckHttpError}</pre>,
+                    },
+                  ]}
+                />
+              </Card>
+            ) : null}
           </Space>
         </Card>
       )
