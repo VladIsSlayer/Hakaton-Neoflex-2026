@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sort"
 	"strings"
@@ -11,9 +12,11 @@ import (
 )
 
 var (
-	ErrNotFound           = errors.New("not found")
-	ErrEmptyTitle         = errors.New("empty course title")
-	ErrGitBindingNotFound = errors.New("git issue not mapped")
+	ErrNotFound              = errors.New("not found")
+	ErrEmptyTitle            = errors.New("empty course title")
+	ErrEmptyReferenceAnswer  = errors.New("reference answer required")
+	ErrGitBindingNotFound    = errors.New("git issue not mapped")
+	ErrEmailTaken            = errors.New("email already registered")
 )
 
 type Memory struct {
@@ -28,6 +31,8 @@ type Memory struct {
 	tasksByCourse   map[string][]string
 	successKey      map[string]struct{}
 	gitBindings     map[string]GitIssueBinding
+	enrolled        map[string]struct{}
+	competencyNames map[string]string
 }
 
 func buildMemory(raw *seedFile) (*Memory, error) {
@@ -42,6 +47,8 @@ func buildMemory(raw *seedFile) (*Memory, error) {
 		tasksByCourse:   make(map[string][]string),
 		successKey:      make(map[string]struct{}),
 		gitBindings:     make(map[string]GitIssueBinding),
+		enrolled:        make(map[string]struct{}),
+		competencyNames: make(map[string]string),
 	}
 	for _, su := range raw.Users {
 		emailKey := strings.ToLower(strings.TrimSpace(su.Email))
@@ -94,6 +101,9 @@ func buildMemory(raw *seedFile) (*Memory, error) {
 		t := raw.Tasks[i]
 		tCopy := t
 		m.tasksByID[t.ID] = &tCopy
+		if t.CompetencyID != "" && t.CompetencyName != "" {
+			m.competencyNames[t.CompetencyID] = t.CompetencyName
+		}
 		courseID := m.lessonCourse[t.LessonID]
 		if courseID != "" {
 			m.tasksByCourse[courseID] = append(m.tasksByCourse[courseID], t.ID)
@@ -416,3 +426,169 @@ func (m *Memory) CreateCourse(_ context.Context, title, description string, isPu
 	m.lessonsByCourse[c.ID] = nil
 	return c, nil
 }
+
+func enrollKey(userID, courseID string) string {
+	return userID + "\x00" + courseID
+}
+
+func (m *Memory) CreateStudent(_ context.Context, email, fullName, passwordHash string) (*User, error) {
+	email = strings.TrimSpace(email)
+	fullName = strings.TrimSpace(fullName)
+	key := strings.ToLower(email)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, taken := m.byEmail[key]; taken {
+		return nil, ErrEmailTaken
+	}
+	id, err := newUUIDv4()
+	if err != nil {
+		return nil, err
+	}
+	u := &User{
+		ID:           id,
+		Email:        email,
+		PasswordHash: passwordHash,
+		Role:         "student",
+		FullName:     fullName,
+	}
+	m.byID[id] = u
+	m.byEmail[key] = u
+	m.comps[id] = nil
+	return u, nil
+}
+
+func (m *Memory) GetCourseByID(_ context.Context, courseID string) (*Course, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	c, ok := m.coursesByID[strings.TrimSpace(courseID)]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	cp := *c
+	return &cp, nil
+}
+
+func (m *Memory) CreateLesson(_ context.Context, pIn CreateLessonParams) (Lesson, error) {
+	title := strings.TrimSpace(pIn.Title)
+	if title == "" {
+		return Lesson{}, ErrEmptyTitle
+	}
+	courseID := strings.TrimSpace(pIn.CourseID)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.coursesByID[courseID]; !ok {
+		return Lesson{}, ErrNotFound
+	}
+	id, err := newUUIDv4()
+	if err != nil {
+		return Lesson{}, err
+	}
+	var blocks json.RawMessage
+	if len(pIn.ContentBlocksJSON) > 0 {
+		blocks = append(json.RawMessage(nil), pIn.ContentBlocksJSON...)
+	}
+	l := Lesson{
+		ID:                  id,
+		CourseID:            courseID,
+		Title:               title,
+		OrderIndex:          pIn.OrderIndex,
+		ContentBody:         strings.TrimSpace(pIn.ContentBody),
+		ContentBlocksJSON:   blocks,
+		VideoEmbedURL:       pIn.VideoEmbedURL,
+		PracticeKind:        pIn.PracticeKind,
+		PracticeTitle:       pIn.PracticeTitle,
+		QuizQuestion:        pIn.QuizQuestion,
+		QuizOptionsJSON:     pIn.QuizOptionsJSON,
+		QuizCorrectOption:   pIn.QuizCorrectOption,
+		IDETemplate:         pIn.IDETemplate,
+		LessonTestsJSON:     pIn.TestsJSON,
+	}
+	m.lessonCourse[id] = courseID
+	list := append(m.lessonsByCourse[courseID], l)
+	sort.Slice(list, func(i, j int) bool { return list[i].OrderIndex < list[j].OrderIndex })
+	m.lessonsByCourse[courseID] = list
+	l.TaskID = m.taskIDForLessonLocked(id)
+	return l, nil
+}
+
+func (m *Memory) CreateTask(_ context.Context, pIn CreateTaskParams) (Task, error) {
+	ref := strings.TrimSpace(pIn.ReferenceAnswer)
+	if ref == "" {
+		return Task{}, ErrEmptyReferenceAnswer
+	}
+	lessonID := strings.TrimSpace(pIn.LessonID)
+	compID := strings.TrimSpace(pIn.CompetencyID)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	courseID, ok := m.lessonCourse[lessonID]
+	if !ok {
+		return Task{}, ErrNotFound
+	}
+	name, cok := m.competencyNames[compID]
+	if !cok {
+		return Task{}, ErrNotFound
+	}
+	id, err := newUUIDv4()
+	if err != nil {
+		return Task{}, err
+	}
+	var tt, pt, tests string
+	if pIn.TaskType != nil {
+		tt = strings.TrimSpace(*pIn.TaskType)
+	}
+	if pIn.PromptText != nil {
+		pt = strings.TrimSpace(*pIn.PromptText)
+	}
+	if pIn.TestsJSON != nil {
+		tests = strings.TrimSpace(*pIn.TestsJSON)
+	}
+	t := Task{
+		ID:              id,
+		LessonID:        lessonID,
+		LanguageID:      pIn.LanguageID,
+		ReferenceAnswer: ref,
+		CompetencyID:    compID,
+		CompetencyName:  name,
+		TaskType:        tt,
+		PromptText:      pt,
+		TestsJSON:       tests,
+	}
+	tCopy := t
+	m.tasksByID[id] = &tCopy
+	if courseID != "" {
+		m.tasksByCourse[courseID] = append(m.tasksByCourse[courseID], id)
+	}
+	return t, nil
+}
+
+func (m *Memory) InsertFailedSubmission(_ context.Context, _, _, _ string) error {
+	return nil
+}
+
+func (m *Memory) EnrollStudentInPublishedCourse(_ context.Context, userID, courseID string) error {
+	userID = strings.TrimSpace(userID)
+	courseID = strings.TrimSpace(courseID)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c, ok := m.coursesByID[courseID]
+	if !ok || !c.IsPublished {
+		return ErrNotFound
+	}
+	k := enrollKey(userID, courseID)
+	if _, ok := m.enrolled[k]; ok {
+		return nil
+	}
+	m.enrolled[k] = struct{}{}
+	return nil
+}
+
+var (
+	_ UserStore          = (*Memory)(nil)
+	_ CourseStore        = (*Memory)(nil)
+	_ TaskCheckStore     = (*Memory)(nil)
+	_ EnrollmentWriter   = (*Memory)(nil)
+	_ GitWebhookStore    = (*Memory)(nil)
+	_ AdminStatsStore    = (*Memory)(nil)
+	_ EnrollmentStatsStore = (*Memory)(nil)
+	_ MeSnapshotStore    = (*Memory)(nil)
+)

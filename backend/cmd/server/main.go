@@ -55,6 +55,7 @@ func main() {
 		log.Println("Judge0: set JUDGE0_AUTH_TOKEN or JUDGE0_RAPIDAPI_KEY if submissions fail (CE often requires auth)")
 	}
 	taskH := &handlers.TaskCheck{Store: pg, Runner: j0}
+	enrollH := &handlers.Enrollment{Writer: pg}
 	gitWh := &handlers.GitWebhook{Store: pg, Secret: cfg.WebhookGitSecret}
 	adminH := &handlers.Admin{Store: pg, DefaultCourseID: cfg.StatsCourseID}
 	if cfg.WebhookGitSecret == "" {
@@ -85,6 +86,7 @@ func main() {
 
 	api := r.Group("/api")
 	api.POST("/auth/login", authH.Login)
+	api.POST("/auth/register", authH.Register)
 	api.GET("/courses", courseH.ListPublished)
 	api.GET("/lessons", courseH.ListCatalogLessons)
 	api.GET("/lessons/:lesson_id/task", lessonTaskH.TaskMeta)
@@ -97,9 +99,15 @@ func main() {
 	protected.GET("/users/me/snapshot", userH.MeSnapshot)
 	protected.POST("/tasks/:task_id/check", taskH.Check)
 
+	student := protected.Group("")
+	student.Use(auth.RequireRole("student"))
+	student.POST("/enrollments", enrollH.Enroll)
+
 	mod := protected.Group("")
 	mod.Use(auth.RequireRole("moderator"))
 	mod.POST("/courses/create", courseH.Create)
+	mod.POST("/courses/:id/lessons", courseH.CreateLesson)
+	mod.POST("/lessons/:lesson_id/tasks", lessonTaskH.CreateTask)
 	mod.GET("/admin/users/stats", adminH.UserStats)
 
 	addr := ":" + cfg.Port

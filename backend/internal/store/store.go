@@ -24,6 +24,7 @@ type UserStore interface {
 	FindByEmail(ctx context.Context, email string) (*User, error)
 	GetByID(ctx context.Context, id string) (*User, error)
 	ListCompetencies(ctx context.Context, userID string) ([]UserCompetency, error)
+	CreateStudent(ctx context.Context, email, fullName, passwordHash string) (*User, error)
 }
 
 type Course struct {
@@ -57,6 +58,36 @@ type CourseStore interface {
 	ListLessonsForPublishedCourse(ctx context.Context, courseID string) ([]Lesson, error)
 	ListAllLessonsForPublishedCatalog(ctx context.Context) ([]Lesson, error)
 	CreateCourse(ctx context.Context, title, description string, isPublished bool, contentBlocksJSON []byte) (Course, error)
+	GetCourseByID(ctx context.Context, courseID string) (*Course, error)
+	CreateLesson(ctx context.Context, p CreateLessonParams) (Lesson, error)
+}
+
+// CreateLessonParams — создание урока модератором.
+type CreateLessonParams struct {
+	CourseID          string
+	Title             string
+	OrderIndex        int
+	ContentBody       string
+	ContentBlocksJSON []byte
+	VideoEmbedURL     *string
+	PracticeKind      *string
+	PracticeTitle     *string
+	QuizQuestion      *string
+	QuizOptionsJSON   *string
+	QuizCorrectOption *string
+	IDETemplate       *string
+	TestsJSON         *string
+}
+
+// CreateTaskParams — создание задачи Judge0 для урока.
+type CreateTaskParams struct {
+	LessonID        string
+	LanguageID      int
+	ReferenceAnswer string
+	CompetencyID    string
+	TaskType        *string
+	PromptText      *string
+	TestsJSON       *string
 }
 
 type Task struct {
@@ -75,6 +106,13 @@ type TaskCheckStore interface {
 	GetTask(ctx context.Context, taskID string) (*Task, error)
 	GetTaskForPublishedLesson(ctx context.Context, lessonID string) (*Task, error)
 	RecordSuccessIfFirst(ctx context.Context, userID, taskID, userCode string) (alreadySolved bool, competencies []UserCompetency, courseProgressPercent int, err error)
+	InsertFailedSubmission(ctx context.Context, userID, taskID, userCode string) error
+	CreateTask(ctx context.Context, p CreateTaskParams) (Task, error)
+}
+
+// EnrollmentWriter — запись студента на опубликованный курс.
+type EnrollmentWriter interface {
+	EnrollStudentInPublishedCourse(ctx context.Context, userID, courseID string) error
 }
 
 const competencyPointsPerTask = 10

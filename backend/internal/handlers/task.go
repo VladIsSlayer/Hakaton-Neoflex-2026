@@ -78,6 +78,7 @@ func (h *TaskCheck) Check(c *gin.Context) {
 		return
 	}
 	if !executedOK {
+		_ = h.Store.InsertFailedSubmission(c.Request.Context(), userID, taskID, req.UserCode)
 		msg := firstNonEmpty(compileOut, stderr, statusDesc, stdout)
 		c.JSON(http.StatusOK, gin.H{
 			"status":                     "failed",
@@ -97,6 +98,7 @@ func (h *TaskCheck) Check(c *gin.Context) {
 	got := strings.TrimSpace(stdout)
 	want := strings.TrimSpace(task.ReferenceAnswer)
 	if got != want {
+		_ = h.Store.InsertFailedSubmission(c.Request.Context(), userID, taskID, req.UserCode)
 		c.JSON(http.StatusOK, gin.H{
 			"status":                     "failed",
 			"phase":                      executionPhaseCompleted,

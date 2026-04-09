@@ -699,6 +699,221 @@ func isForeignKeyViolation(err error) bool {
 	return pgErr.Code == "23503"
 }
 
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+	return pgErr.Code == "23505"
+}
+
+func (p *Postgres) CreateStudent(ctx context.Context, email, fullName, passwordHash string) (*User, error) {
+	email = strings.TrimSpace(email)
+	fullName = strings.TrimSpace(fullName)
+	const q = `
+INSERT INTO public.users (role, email, password_hash, full_name)
+VALUES ('student', $1, $2, $3)
+RETURNING id::text, email, role, full_name`
+	var u User
+	u.Role = "student"
+	err := p.pool.QueryRow(ctx, q, email, passwordHash, fullName).Scan(&u.ID, &u.Email, &u.Role, &u.FullName)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return nil, ErrEmailTaken
+		}
+		return nil, err
+	}
+	return &u, nil
+}
+
+func (p *Postgres) GetCourseByID(ctx context.Context, courseID string) (*Course, error) {
+	const q = `
+SELECT id::text, title, description, is_published, content_blocks_json
+FROM public.courses
+WHERE id = $1::uuid`
+	var c Course
+	var blocks []byte
+	err := p.pool.QueryRow(ctx, q, strings.TrimSpace(courseID)).Scan(&c.ID, &c.Title, &c.Description, &c.IsPublished, &blocks)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	c.ContentBlocksJSON = bytesToRawJSON(blocks)
+	return &c, nil
+}
+
+func (p *Postgres) CreateLesson(ctx context.Context, pIn CreateLessonParams) (Lesson, error) {
+	title := strings.TrimSpace(pIn.Title)
+	if title == "" {
+		return Lesson{}, ErrEmptyTitle
+	}
+	if _, err := p.GetCourseByID(ctx, pIn.CourseID); err != nil {
+		return Lesson{}, err
+	}
+	var blocksArg any
+	if len(pIn.ContentBlocksJSON) > 0 {
+		blocksArg = pIn.ContentBlocksJSON
+	}
+	const q = `
+INSERT INTO public.lessons (
+	course_id, title, order_index, content_body, content_blocks_json,
+	video_embed_url, practice_kind, practice_title, quiz_question, quiz_options_json,
+	quiz_correct_option, ide_template, tests_json)
+VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+RETURNING id::text`
+	var id string
+	err := p.pool.QueryRow(ctx, q,
+		strings.TrimSpace(pIn.CourseID),
+		title,
+		pIn.OrderIndex,
+		strings.TrimSpace(pIn.ContentBody),
+		blocksArg,
+		pIn.VideoEmbedURL,
+		pIn.PracticeKind,
+		pIn.PracticeTitle,
+		pIn.QuizQuestion,
+		pIn.QuizOptionsJSON,
+		pIn.QuizCorrectOption,
+		pIn.IDETemplate,
+		pIn.TestsJSON,
+	).Scan(&id)
+	if err != nil {
+		if isForeignKeyViolation(err) {
+			return Lesson{}, ErrNotFound
+		}
+		return Lesson{}, err
+	}
+	lessons, err := p.listLessonsByCourseID(ctx, pIn.CourseID)
+	if err != nil {
+		return Lesson{}, err
+	}
+	for _, l := range lessons {
+		if l.ID == id {
+			return l, nil
+		}
+	}
+	return Lesson{}, ErrNotFound
+}
+
+func (p *Postgres) listLessonsByCourseID(ctx context.Context, courseID string) ([]Lesson, error) {
+	const q = `
+SELECT l.id::text, l.course_id::text, l.title, l.order_index, l.content_body,
+       l.content_blocks_json, l.video_embed_url, l.practice_kind, l.practice_title,
+       l.quiz_question, l.quiz_options_json, l.quiz_correct_option, l.ide_template, l.tests_json,
+       (SELECT t.id::text FROM public.tasks t WHERE t.lesson_id = l.id ORDER BY t.id LIMIT 1) AS task_id
+FROM public.lessons l
+WHERE l.course_id = $1::uuid
+ORDER BY l.order_index ASC`
+	rows, err := p.pool.Query(ctx, q, strings.TrimSpace(courseID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Lesson
+	for rows.Next() {
+		l, err := scanLessonRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
+func (p *Postgres) CreateTask(ctx context.Context, pIn CreateTaskParams) (Task, error) {
+	ref := strings.TrimSpace(pIn.ReferenceAnswer)
+	if ref == "" {
+		return Task{}, ErrEmptyReferenceAnswer
+	}
+	var lessonOK int
+	err := p.pool.QueryRow(ctx, `
+SELECT 1 FROM public.lessons l WHERE l.id = $1::uuid LIMIT 1`, strings.TrimSpace(pIn.LessonID)).Scan(&lessonOK)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Task{}, ErrNotFound
+		}
+		return Task{}, err
+	}
+
+	var compExists bool
+	if err := p.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM competencies WHERE id = $1::uuid)`, strings.TrimSpace(pIn.CompetencyID)).Scan(&compExists); err != nil {
+		return Task{}, err
+	}
+	if !compExists {
+		return Task{}, ErrNotFound
+	}
+
+	const ins = `
+INSERT INTO public.tasks (lesson_id, language_id, reference_answer, competency_id, task_type, prompt_text, tests_json)
+VALUES ($1::uuid, $2, $3, $4::uuid, $5, $6, $7)
+RETURNING id::text`
+	var tid string
+	err = p.pool.QueryRow(ctx, ins,
+		strings.TrimSpace(pIn.LessonID),
+		pIn.LanguageID,
+		ref,
+		strings.TrimSpace(pIn.CompetencyID),
+		pIn.TaskType,
+		pIn.PromptText,
+		pIn.TestsJSON,
+	).Scan(&tid)
+	if err != nil {
+		if isForeignKeyViolation(err) {
+			return Task{}, ErrNotFound
+		}
+		return Task{}, err
+	}
+	tp, err := p.GetTask(ctx, tid)
+	if err != nil {
+		return Task{}, err
+	}
+	return *tp, nil
+}
+
+func (p *Postgres) InsertFailedSubmission(ctx context.Context, userID, taskID, userCode string) error {
+	_, err := p.pool.Exec(ctx, `
+INSERT INTO public.submissions (user_id, task_id, status, user_code)
+VALUES ($1::uuid, $2::uuid, 'failed', $3)`,
+		strings.TrimSpace(userID), strings.TrimSpace(taskID), userCode)
+	if err != nil {
+		if isForeignKeyViolation(err) {
+			return ErrNotFound
+		}
+		return err
+	}
+	return nil
+}
+
+func (p *Postgres) EnrollStudentInPublishedCourse(ctx context.Context, userID, courseID string) error {
+	cmd, err := p.pool.Exec(ctx, `
+INSERT INTO public.enrollments (user_id, course_id, progress_percent)
+SELECT $1::uuid, $2::uuid, 0
+FROM public.courses c
+WHERE c.id = $2::uuid AND c.is_published = true
+ON CONFLICT (user_id, course_id) DO NOTHING`,
+		strings.TrimSpace(userID), strings.TrimSpace(courseID))
+	if err != nil {
+		return err
+	}
+	if cmd.RowsAffected() > 0 {
+		return nil
+	}
+	var exists bool
+	if err := p.pool.QueryRow(ctx, `
+SELECT EXISTS(
+  SELECT 1 FROM public.enrollments e
+  WHERE e.user_id = $1::uuid AND e.course_id = $2::uuid)`,
+		strings.TrimSpace(userID), strings.TrimSpace(courseID)).Scan(&exists); err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	return ErrNotFound
+}
+
 func bytesToRawJSON(b []byte) json.RawMessage {
 	if len(b) == 0 || string(b) == "null" {
 		return nil
@@ -758,6 +973,7 @@ var _ GitWebhookStore = (*Postgres)(nil)
 var _ AdminStatsStore = (*Postgres)(nil)
 var _ EnrollmentStatsStore = (*Postgres)(nil)
 var _ MeSnapshotStore = (*Postgres)(nil)
+var _ EnrollmentWriter = (*Postgres)(nil)
 
 func (p *Postgres) String() string {
 	return fmt.Sprintf("PostgresStore(hasGitBindings=%v)", p.hasGitBindings)
