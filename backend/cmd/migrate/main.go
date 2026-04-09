@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"neoflex-lms/internal/env"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -23,6 +25,7 @@ type migrationFile struct {
 }
 
 func main() {
+	env.Load()
 	dbURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL is required")

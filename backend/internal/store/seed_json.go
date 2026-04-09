@@ -6,12 +6,12 @@ import (
 )
 
 type seedFile struct {
-	Users              []seedUser                  `json:"users"`
-	UserCompetencies   map[string][]UserCompetency `json:"user_competencies"`
-	Courses            []Course                    `json:"courses"`
-	Lessons            []Lesson                    `json:"lessons"`
-	Tasks              []Task                      `json:"tasks"`
-	GitIssueBindings   map[string]gitIssueBinding  `json:"git_issue_bindings"`
+	Users            []seedUser                  `json:"users"`
+	UserCompetencies map[string][]UserCompetency `json:"user_competencies"`
+	Courses          []Course                    `json:"courses"`
+	Lessons          []Lesson                    `json:"lessons"`
+	Tasks            []Task                      `json:"tasks"`
+	GitIssueBindings map[string]gitIssueBinding  `json:"git_issue_bindings"`
 }
 
 type gitIssueBinding struct {
@@ -20,15 +20,23 @@ type gitIssueBinding struct {
 }
 
 type seedUser struct {
-	ID        string  `json:"id"`
-	Email     string  `json:"email"`
-	Password  string  `json:"password"`
-	Role      string  `json:"role"`
-	FullName  string  `json:"full_name"`
-	TgChatID  *string `json:"tg_chat_id"`
+	ID       string  `json:"id"`
+	Email    string  `json:"email"`
+	Password string  `json:"password"`
+	Role     string  `json:"role"`
+	FullName string  `json:"full_name"`
+	TgChatID *string `json:"tg_chat_id"`
 }
 
 func NewMemoryFromJSON(path string) (*Memory, error) {
+	raw, err := readSeedFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return buildMemory(raw)
+}
+
+func readSeedFile(path string) (*seedFile, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -37,5 +45,5 @@ func NewMemoryFromJSON(path string) (*Memory, error) {
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return nil, err
 	}
-	return buildMemory(&raw)
+	return &raw, nil
 }

@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"neoflex-lms/internal/auth"
 	"neoflex-lms/internal/config"
+	"neoflex-lms/internal/env"
 	"neoflex-lms/internal/handlers"
 	"neoflex-lms/internal/judge0"
 	"neoflex-lms/internal/store"
@@ -17,6 +20,7 @@ import (
 )
 
 func main() {
+	env.Load()
 	cfg := config.Load()
 	if cfg.DatabaseURL == "" {
 		log.Fatal("DATABASE_URL is required: backend now runs with PostgreSQL store")
@@ -41,16 +45,35 @@ func main() {
 	defer pg.Close()
 	log.Println("connected to PostgreSQL")
 
+	seedPath := resolveSeedFilePath(cfg.SeedJSONPath)
+	if cfg.SeedIfEmpty {
+		ctxSeed, cancelSeed := context.WithTimeout(context.Background(), 60*time.Second)
+		nPub, errCount := pg.PublishedCourseCount(ctxSeed)
+		cancelSeed()
+		if errCount != nil {
+			log.Printf("published course count: %v (auto-seed skipped)", errCount)
+		} else if nPub == 0 {
+			ctxSeed, cancelSeed := context.WithTimeout(context.Background(), 60*time.Second)
+			log.Printf("SEED_IF_EMPTY: loading catalog from %s", seedPath)
+			err := pg.SeedFromJSON(ctxSeed, seedPath)
+			cancelSeed()
+			if err != nil {
+				log.Fatalf("seed postgres: %v", err)
+			}
+			log.Println("PostgreSQL catalog seeded from JSON (demo course + lessons + tasks)")
+		}
+	}
+
 	authH := &handlers.Auth{Store: pg, JWTSecret: cfg.JWTSecret, TokenTTL: cfg.TokenTTL}
 	userH := &handlers.User{Store: pg, Snapshot: pg}
 	courseH := &handlers.Course{Store: pg}
 	statsH := &handlers.Stats{Store: pg}
 	lessonTaskH := &handlers.LessonTask{Tasks: pg}
 	j0 := &judge0.Client{
-		BaseURL:       cfg.Judge0BaseURL,
-		AuthToken:     cfg.Judge0AuthToken,
-		RapidAPIKey:   cfg.Judge0RapidAPIKey,
-		RapidAPIHost:  cfg.Judge0RapidAPIHost,
+		BaseURL:      cfg.Judge0BaseURL,
+		AuthToken:    cfg.Judge0AuthToken,
+		RapidAPIKey:  cfg.Judge0RapidAPIKey,
+		RapidAPIHost: cfg.Judge0RapidAPIHost,
 	}
 	if cfg.Judge0AuthToken == "" && cfg.Judge0RapidAPIKey == "" {
 		log.Println("Judge0: set JUDGE0_AUTH_TOKEN or JUDGE0_RAPIDAPI_KEY if submissions fail (CE often requires auth)")
@@ -116,4 +139,15 @@ func main() {
 	if err := r.Run(addr); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func resolveSeedFilePath(primary string) string {
+	if fi, err := os.Stat(primary); err == nil && !fi.IsDir() {
+		return primary
+	}
+	alt := filepath.Join("backend", primary)
+	if fi, err := os.Stat(alt); err == nil && !fi.IsDir() {
+		return alt
+	}
+	return primary
 }

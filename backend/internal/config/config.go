@@ -26,6 +26,8 @@ type Config struct {
 	DBMaxConnLifetime  time.Duration
 	DBMaxConnIdleTime  time.Duration
 	DBHealthCheckEvery time.Duration
+	// SeedIfEmpty: при старте сервера залить data/seed.json в Postgres, если нет опубликованных курсов.
+	SeedIfEmpty bool
 }
 
 func Load() Config {
@@ -74,6 +76,7 @@ func Load() Config {
 		DBMaxConnLifetime:  readDuration("DB_MAX_CONN_LIFETIME", 30*time.Minute),
 		DBMaxConnIdleTime:  readDuration("DB_MAX_CONN_IDLE_TIME", 5*time.Minute),
 		DBHealthCheckEvery: readDuration("DB_HEALTH_CHECK_PERIOD", 1*time.Minute),
+		SeedIfEmpty:        readBoolEnv("SEED_IF_EMPTY", appEnv == "development"),
 	}
 }
 
@@ -99,6 +102,21 @@ func readDuration(name string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return v
+}
+
+func readBoolEnv(name string, defaultVal bool) bool {
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv(name)))
+	if raw == "" {
+		return defaultVal
+	}
+	switch raw {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return defaultVal
+	}
 }
 
 // parseFrontendCORSOrigins — AllowOrigins для CORS.
