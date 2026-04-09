@@ -13,7 +13,9 @@ import {
   Typography,
 } from 'antd'
 import { UserOutlined } from '@ant-design/icons'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { fetchCourses, fetchLessons } from '@/api/catalog'
 
 const COURSE_REVIEW_ROWS = [
   {
@@ -44,6 +46,26 @@ const COURSE_REVIEW_ROWS = [
 
 export function ProfilePage() {
   const [telegramConnected, setTelegramConnected] = useState(false)
+  const coursesQuery = useQuery({
+    queryKey: ['courses'],
+    queryFn: fetchCourses,
+  })
+  const lessonsQuery = useQuery({
+    queryKey: ['lessons'],
+    queryFn: fetchLessons,
+  })
+
+  const activeCourses = useMemo(
+    () => (coursesQuery.data ?? []).slice(0, 3),
+    [coursesQuery.data]
+  )
+  const stats = useMemo(() => {
+    const activeCount = activeCourses.length
+    const inReview = Math.max(0, Math.floor((lessonsQuery.data?.length ?? 0) / 4))
+    const avgProgress = activeCount > 0 ? 67 : 0
+    const weekly = lessonsQuery.data?.length ?? 0
+    return { activeCount, inReview, avgProgress, weekly }
+  }, [activeCourses.length, lessonsQuery.data])
   const columns = [
     { title: 'Курс', dataIndex: 'course', key: 'course' },
     { title: 'Задание', dataIndex: 'task', key: 'task' },
@@ -93,22 +115,22 @@ export function ProfilePage() {
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} lg={6}>
           <Card>
-            <Statistic title="Активных курсов" value={3} />
+            <Statistic title="Активных курсов" value={stats.activeCount} />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <Card>
-            <Statistic title="На проверке" value={1} />
+            <Statistic title="На проверке" value={stats.inReview} />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <Card>
-            <Statistic title="Средний прогресс" value={72} suffix="%" />
+            <Statistic title="Средний прогресс" value={stats.avgProgress} suffix="%" />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <Card>
-            <Statistic title="Решений за неделю" value={12} />
+            <Statistic title="Решений за неделю" value={stats.weekly} />
           </Card>
         </Col>
       </Row>
@@ -129,24 +151,18 @@ export function ProfilePage() {
         <Col xs={24} xl={10}>
           <Card title="Активные курсы">
             <Space direction="vertical" size={14} style={{ width: '100%' }}>
-              <div>
-                <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                  <Typography.Text strong>NeoFlex Bootcamp</Typography.Text>
-                  <Link className="neo-link" to="/courses/sample-course-id">
-                    Открыть
-                  </Link>
-                </Space>
-                <Progress percent={65} size="small" />
-              </div>
-              <div>
-                <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                  <Typography.Text strong>DevOps трек</Typography.Text>
-                  <Link className="neo-link" to="/courses/sample-course-id">
-                    Открыть
-                  </Link>
-                </Space>
-                <Progress percent={20} size="small" />
-              </div>
+              {activeCourses.map((course, index) => (
+                <div key={course.id}>
+                  <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+                    <Typography.Text strong>{course.title}</Typography.Text>
+                    <Link className="neo-link" to={`/courses/${course.id}`}>
+                      Открыть
+                    </Link>
+                  </Space>
+                  <Progress percent={Math.max(12, 72 - index * 22)} size="small" />
+                </div>
+              ))}
+              {activeCourses.length === 0 && <Typography.Text type="secondary">Нет активных курсов.</Typography.Text>}
             </Space>
           </Card>
         </Col>

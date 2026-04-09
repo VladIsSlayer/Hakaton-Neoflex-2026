@@ -1,6 +1,8 @@
 import { Avatar, Button, Card, Col, Input, Pagination, Progress, Row, Space, Tag, Typography } from 'antd'
 import { SearchOutlined } from '@ant-design/icons'
 import { useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { fetchCourses } from '@/api/catalog'
 
 const MOCK_COURSES = [
   { id: '1', title: 'Python Core', level: 'Junior', progress: 72, skill: 'PY', enrollments: 421, sticker: 'TOP' },
@@ -22,12 +24,30 @@ export function DashboardPage() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [search, setSearch] = useState('')
   const pageSize = 9
+  const coursesQuery = useQuery({
+    queryKey: ['courses'],
+    queryFn: fetchCourses,
+  })
+
+  const coursesSource = useMemo(() => {
+    if (!coursesQuery.data || coursesQuery.data.length === 0) return MOCK_COURSES
+    return coursesQuery.data.map((course, index) => ({
+      id: course.id,
+      title: course.title,
+      level: ['Junior', 'Middle', 'Senior'][index % 3],
+      progress: 20 + ((index * 11) % 70),
+      skill: (course.title.match(/[A-Za-zА-Яа-я]/)?.[0] ?? 'C').toUpperCase(),
+      enrollments: 80 + index * 23,
+      sticker: index === 0 ? 'TOP' : index === 1 ? 'HIT' : '',
+    }))
+  }, [coursesQuery.data])
+
   const filteredCourses = useMemo(
     () =>
-      MOCK_COURSES.filter((item) =>
+      coursesSource.filter((item) =>
         item.title.toLowerCase().includes(search.trim().toLowerCase())
       ),
-    [search]
+    [coursesSource, search]
   )
   const pageCourses = useMemo(
     () => filteredCourses.slice((page - 1) * pageSize, page * pageSize),
@@ -107,6 +127,12 @@ export function DashboardPage() {
         onChange={setPage}
         showSizeChanger={false}
       />
+
+      {coursesQuery.isError && (
+        <Typography.Text type="secondary">
+          Не удалось загрузить курсы из БД, показаны локальные данные.
+        </Typography.Text>
+      )}
     </Space>
   )
 }

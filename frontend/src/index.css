@@ -9,6 +9,7 @@ body {
   font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   color: #260743;
   background: #f5f4ff;
+  overflow-x: hidden;
 }
 
 a {
@@ -21,6 +22,7 @@ a:hover {
 
 #root {
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
 code {
@@ -528,7 +530,7 @@ code {
 }
 
 .neo-hero-fullscreen .ant-card-body {
-  min-height: calc(100vh - 84px);
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -539,9 +541,14 @@ code {
 .neo-hero-fullscreen {
   border-radius: 0 !important;
   width: 100vw;
-  margin-left: calc(50% - 50vw);
-  margin-right: calc(50% - 50vw);
+  max-width: 100vw;
+  margin-left: -50vw;
+  margin-right: -50vw;
+  position: relative;
+  left: 50%;
+  right: 50%;
   margin-top: -20px;
+  overflow: hidden;
 }
 
 .neo-hero-title {

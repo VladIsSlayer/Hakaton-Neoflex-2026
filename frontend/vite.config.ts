@@ -8,7 +8,11 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, rootDir, '')
 
   const supabaseUrl = env.VITE_SUPABASE_URL || env.API_SUPABASE_URL || ''
-  const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || env.API_SUPABASE_ANON_KEY || ''
+  const supabaseAnonKey =
+    env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY ||
+    env.VITE_SUPABASE_ANON_KEY ||
+    env.API_SUPABASE_ANON_KEY ||
+    ''
   const apiUrl = env.VITE_API_URL || env.API_URL || 'http://localhost:8080'
 
   return {
@@ -22,6 +26,7 @@ export default defineConfig(({ mode }) => {
     define: {
       'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(supabaseUrl),
       'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(supabaseAnonKey),
+      'import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY': JSON.stringify(supabaseAnonKey),
       'import.meta.env.VITE_API_URL': JSON.stringify(apiUrl),
     },
   }
