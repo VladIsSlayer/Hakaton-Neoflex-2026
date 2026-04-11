@@ -1,6 +1,16 @@
 # NEO EDU (Hakaton Neoflex 2026)
 
-Корпоративная LMS в монорепозитории: **React (Vite)** + **Go (Gin)** + **PostgreSQL** (часто Supabase как хост). Ниже — один документ **на разных уровнях глубины**: можно остановиться после быстрого старта или углубиться в архитектуру и БД.
+**NEO EDU** — корпоративная LMS для ИТ-обучения: витрина курсов, уроки с теорией и практикой, проверка кода в песочнице, матрица компетенций и прогресс студента. Проект подготовлен в рамках хакатона **Neoflex**; слоган команды — *«Расширяем границы российского IT»*.
+
+**Команда:** Буренков Григорий — Lead / Fullstack · Бычков Данил — Database · Ворончихин Даниил — QA · Трубачев Владислав — Backend.
+
+![Команда проекта NEO EDU](docs/readme-assets/team.png)
+
+**Демонстрация работы сайта:** [видео на YouTube](https://youtu.be/Zep8DZ1PEqc)
+
+---
+
+Технически это **монорепозиторий**: **React (Vite)** + **Go (Gin)** + **PostgreSQL** (часто Supabase как хост). Ниже — один документ **на разных уровнях глубины**: можно остановиться после быстрого старта или углубиться в архитектуру и БД.
 
 ---
 
@@ -58,7 +68,7 @@
 | `apps/web` | SPA, структура FSD: `app`, `pages`, `widgets`, `features`, `shared` |
 | `apps/api` | HTTP API, JWT, работа с БД, Judge0, `cmd/migrate` |
 | `infra/postgres` | Миграции, `schema.sql`, документация ERD |
-| `docs/` | [architecture.md](docs/architecture.md), [database.md](docs/database.md), [readme-assets/](docs/readme-assets/) — скриншоты и медиа для будущего оформления README |
+| `docs/` | [architecture.md](docs/architecture.md), [database.md](docs/database.md), [readme-assets/](docs/readme-assets/) — баннер команды и доп. скриншоты |
 
 **Почему два `package.json`?**  
 - **`apps/web/package.json`** — реальное приложение: React, Vite, скрипты `dev` / `build` / `lint`.  
@@ -81,16 +91,21 @@
 
 ## Сборка продакшен-артефактов
 
+Из **корня** (фронт + бэкенд подряд):
+
 ```bash
-npm run build:web
-npm run build:api
+npm run build
 ```
+
+По отдельности: `npm run build:web`, `npm run build:api`.
+
+Проверка типов только фронта: `cd apps/web && npx tsc -b` (в корне нет `tsconfig.json`, команда `npx tsc -b` там не подходит).
 
 ---
 
-## Медиа для оформления README
+## Медиа
 
-Скриншоты и иллюстрации для главной страницы репозитория складывайте в **[docs/readme-assets/](docs/readme-assets/)** (см. README внутри папки).
+Баннер команды: [docs/readme-assets/team.png](docs/readme-assets/team.png). Дополнительные скриншоты для README — в **[docs/readme-assets/](docs/readme-assets/)**.
 
 ---
 
@@ -100,3 +115,10 @@ npm run build:api
 cd apps/api && go run ./cmd/server
 cd apps/web && npm run dev
 ```
+
+---
+
+## Контакты
+
+- **Разработчик**: Григорий Буренков  
+- **Email**: skvorgrand@gmail.com

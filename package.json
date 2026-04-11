@@ -6,8 +6,9 @@
     "dev:api": "cd apps/api && go run ./cmd/server",
     "dev:web": "cd apps/web && npm run dev",
     "install:web": "cd apps/web && npm install",
+    "build": "npm run build:web && npm run build:api",
     "build:web": "cd apps/web && npm run build",
-    "build:api": "cd apps/api && go build -o bin/server ./cmd/server"
+    "build:api": "cd apps/api && env GO111MODULE=on go build -o bin/server ./cmd/server"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
