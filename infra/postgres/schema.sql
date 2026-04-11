@@ -1,5 +1,5 @@
 -- NEO EDU — схема БД (PostgreSQL / Supabase)
--- Основано на shared/plan/db.md. Скрипт идемпотентен по структуре: можно перезапускать после правок объектов.
+-- Справочный снимок схемы; источник правды — миграции в migrations/. Подробности: docs/database.md.
 
 -- gen_random_uuid() доступен в PostgreSQL 13+ (Supabase по умолчанию).
 
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS public.courses (
 );
 
 COMMENT ON COLUMN public.courses.is_published IS 'Черновик (false) не показывается студентам в GET /api/courses.';
-COMMENT ON COLUMN public.courses.content_blocks_json IS 'Модульные блоки курса (text, video, quiz, ide); см. shared/plan/db.md.';
+COMMENT ON COLUMN public.courses.content_blocks_json IS 'Модульные блоки курса (text, video, quiz, ide); см. docs/database.md.';
 
 -- ---------------------------------------------------------------------------
 -- 4. Уроки (каскад при удалении курса)
@@ -60,10 +60,12 @@ CREATE TABLE IF NOT EXISTS public.lessons (
     quiz_options_json text NULL,
     quiz_correct_option text NULL,
     ide_template text NULL,
+    ide_task text NULL,
     tests_json text NULL
 );
 
 COMMENT ON COLUMN public.lessons.order_index IS 'Сортировка уроков в плеере: ORDER BY order_index ASC.';
+COMMENT ON COLUMN public.lessons.ide_task IS 'Текст задания для IDE (legacy/доп. к content_blocks_json).';
 COMMENT ON COLUMN public.lessons.content_blocks_json IS 'Основной контент урока для фронта; legacy-поля ниже — fallback.';
 
 CREATE INDEX IF NOT EXISTS lessons_course_id_order_idx

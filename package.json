@@ -2,7 +2,7 @@
   "name": "neoflex-lms",
   "private": true,
   "scripts": {
-    "dev": "concurrently -k -n api,web -c blue,magenta \"npm run dev:api\" \"npm run dev:web\"",
+    "dev": "concurrently -k -n api,web -c blue,magenta \"npm run dev:api\" \"wait-on tcp:127.0.0.1:8080 && npm run dev:web\"",
     "dev:api": "cd apps/api && go run ./cmd/server",
     "dev:web": "cd apps/web && npm run dev",
     "install:web": "cd apps/web && npm install",
@@ -10,6 +10,7 @@
     "build:api": "cd apps/api && go build -o bin/server ./cmd/server"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "wait-on": "^8.0.5"
   }
 }

@@ -2,7 +2,7 @@ version: '3'
 
 tasks:
   dev:
-    desc: Запуск API (Go) и Vite в параллели
+    desc: Запуск API и Vite (сначала API, затем ожидание :8080 и Vite — без гонки прокси)
     deps: [dev-api, dev-web]
 
   dev-api:
@@ -13,6 +13,7 @@ tasks:
   dev-web:
     dir: apps/web
     cmds:
+      - npx --yes --prefix ../.. wait-on tcp:127.0.0.1:8080
       - npm run dev
 
   install-web:

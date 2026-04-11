@@ -7,14 +7,12 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// Load reads .env from repository root, then overlays apps/api/.env when present.
-// CWD is expected to be apps/api when running go run ./cmd/server.
+// Load reads only the repository root .env (../../.env from apps/api).
+// CWD must be apps/api when running go run ./cmd/server or cmd/migrate.
 func Load() {
 	repoRoot := filepath.Join("..", "..", ".env")
-	if _, err := os.Stat(repoRoot); err == nil {
-		_ = godotenv.Load(repoRoot)
+	if _, err := os.Stat(repoRoot); err != nil {
+		return
 	}
-	if _, err := os.Stat(".env"); err == nil {
-		_ = godotenv.Overload(".env")
-	}
+	_ = godotenv.Load(repoRoot)
 }

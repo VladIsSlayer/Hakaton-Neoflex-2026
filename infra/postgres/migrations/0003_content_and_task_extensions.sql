@@ -1,5 +1,5 @@
 -- 0003_content_and_task_extensions.sql
--- Расширения каталога и задач (shared/plan/db.md, совместимо с seed-demo).
+-- Расширения каталога и задач (см. docs/database.md).
 
 ALTER TABLE public.courses
     ADD COLUMN IF NOT EXISTS content_blocks_json jsonb;
