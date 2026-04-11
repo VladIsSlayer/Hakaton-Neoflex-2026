@@ -1,0 +1,37 @@
+version: '3'
+
+tasks:
+  dev:
+    desc: Запуск API и Vite (сначала API, затем ожидание :8080 и Vite — без гонки прокси)
+    deps: [dev-api, dev-web]
+
+  dev-api:
+    dir: apps/api
+    cmds:
+      - go run ./cmd/server
+
+  dev-web:
+    dir: apps/web
+    cmds:
+      - npx --yes --prefix ../.. wait-on tcp:127.0.0.1:8080
+      - npm run dev
+
+  install-web:
+    dir: apps/web
+    cmds:
+      - npm install
+
+  migrate:
+    dir: apps/api
+    cmds:
+      - go run ./cmd/migrate
+
+  build-web:
+    dir: apps/web
+    cmds:
+      - npm run build
+
+  build-api:
+    dir: apps/api
+    cmds:
+      - go build -o bin/server ./cmd/server
