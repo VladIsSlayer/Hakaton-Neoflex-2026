@@ -1,0 +1,36 @@
+version: '3'
+
+tasks:
+  dev:
+    desc: Запуск API (Go) и Vite в параллели
+    deps: [dev-api, dev-web]
+
+  dev-api:
+    dir: apps/api
+    cmds:
+      - go run ./cmd/server
+
+  dev-web:
+    dir: apps/web
+    cmds:
+      - npm run dev
+
+  install-web:
+    dir: apps/web
+    cmds:
+      - npm install
+
+  migrate:
+    dir: apps/api
+    cmds:
+      - go run ./cmd/migrate
+
+  build-web:
+    dir: apps/web
+    cmds:
+      - npm run build
+
+  build-api:
+    dir: apps/api
+    cmds:
+      - go build -o bin/server ./cmd/server

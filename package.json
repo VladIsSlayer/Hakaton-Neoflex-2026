@@ -1,0 +1,15 @@
+{
+  "name": "neoflex-lms",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c blue,magenta \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "cd apps/api && go run ./cmd/server",
+    "dev:web": "cd apps/web && npm run dev",
+    "install:web": "cd apps/web && npm install",
+    "build:web": "cd apps/web && npm run build",
+    "build:api": "cd apps/api && go build -o bin/server ./cmd/server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
