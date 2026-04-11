@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, prod]
+  pull_request:
+    branches: [main, master, prod]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web (lint + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Typecheck + Vite build
+        run: npm run build
+
+  api:
+    name: API (test + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    env:
+      GO111MODULE: 'on'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/api/go.mod
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build server
+        run: go build -o /tmp/neoflex-api ./cmd/server

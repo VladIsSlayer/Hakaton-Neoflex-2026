@@ -1,0 +1,39 @@
+# Environment (single template: .env.example)
+.env
+.env.*
+!.env.example
+
+# Dependencies & frontend build
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Go binaries (API)
+*.exe
+/server
+apps/api/server
+apps/api/server.exe
+apps/api/bin/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor / OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Tooling / exports
+cursor-chat-export*.json
